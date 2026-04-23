@@ -1,5 +1,5 @@
 # Queue Time and Comfort Predictor
-
+The Queue Time & Comfort Predictor is an IoT-based system that helps students and staff decide the best time to visit campus services (like IT helpdesks or cafes). It uses sensors and a camera to estimate queue length, wait time, and environmental comfort (e.g., noise, CO₂, temperature). This data is processed and turned into simple, real-time advisory messages—like when it’s a good time to go or when to avoid busy periods—via a dashboard or display.
 
 ## Project Structure
 
