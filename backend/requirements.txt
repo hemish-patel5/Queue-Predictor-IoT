@@ -1,0 +1,8 @@
+anthropic>=0.25.0
+paho-mqtt>=2.0.0
+RPi.GPIO>=0.7.1
+adafruit-circuitpython-dht>=3.7.0
+pyserial>=3.5
+opencv-python>=4.9.0
+ultralytics>=8.0.0
+python-dotenv>=1.0.0
