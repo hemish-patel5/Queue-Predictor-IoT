@@ -1,0 +1,17 @@
+# --- Python (Backend) ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# --- React/Node (Frontend) ---
+node_modules/
+build/
+.eslintcache
+.stylelintcache
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
