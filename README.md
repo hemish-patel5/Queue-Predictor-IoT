@@ -21,10 +21,6 @@
 │   ├── /src              # Web dashboard code (React/HTML/Tailwind) 
 │   └── index.html        # Main dashboard entry point
 │
-├── /docs                 # Project Documentation
-│   ├── /minutes          # Meeting minutes from weekly Zoom sessions
-│   ├── /surveys          # User evaluation design and results
-│   └── proposal.pdf      # The original project proposal
 │
 ├── .gitignore            # Files to exclude (e.g., .env with API keys)
 └── README.md             # Project overview and setup instructions
