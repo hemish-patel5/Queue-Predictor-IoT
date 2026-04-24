@@ -1,46 +1,43 @@
-#!/usr/bin/env python3
-import PCF8591 as ADC
-import RPi.GPIO as GPIO
 import time
+import json
+import random
+from datetime import datetime
 
-DO = 17
+OUTPUT_FILE = "hardware/co2_latest.json"
 
-GPIO.setmode(GPIO.BCM)
+_sim_co2 = 800.0
 
-def setup():
-    ADC.setup(0x48)
-    GPIO.setup(DO, GPIO.IN)
+def read_simulated():
+    global _sim_co2
+    _sim_co2 += random.uniform(-20, 20)
+    _sim_co2 = max(400.0, min(2000.0, _sim_co2))
+    return round(_sim_co2)
 
-def print_status(x):
-    if x == 1:
-        print('')
-        print('   *********')
-        print('   * Safe~ *')
-        print('   *********')
-        print('')
-    if x == 0:
-        print('')
-        print('   ***************')
-        print('   * Danger Gas! *')
-        print('   ***************')
-        print('')
+def air_quality_label(ppm):
+    if ppm < 600:
+        return "fresh"
+    elif ppm < 1000:
+        return "good"
+    elif ppm < 1500:
+        return "moderate"
+    return "poor"
 
-def loop():
-    status = 1
-    while True:
-        print(ADC.read(0))
-        tmp = GPIO.input(DO)
-        if tmp != status:
-            print_status(tmp)
-            status = tmp
-        time.sleep(0.2)
-
-def destroy():
-    GPIO.cleanup()
-
-if __name__ == '__main__':
+def main():
+    print("CO2 Sensor Simulation running...\n")
     try:
-        setup()
-        loop()
+        while True:
+            ppm = read_simulated()
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "co2_ppm": ppm,
+                "air_quality": air_quality_label(ppm),
+            }
+            print(json.dumps(payload))
+            with open(OUTPUT_FILE, "w") as f:
+                json.dump(payload, f, indent=2)
+            time.sleep(1)
     except KeyboardInterrupt:
-        destroy()
+        print("\nCO2 Sensor Stopped.")
+
+if __name__ == "__main__":
+    main()

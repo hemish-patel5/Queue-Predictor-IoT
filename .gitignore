@@ -15,3 +15,13 @@ build/
 # --- OS Specific ---
 .DS_Store
 Thumbs.db
+
+
+hardware/drivers/*_latest.json
+backend/logic/fused_state.json
+backend/logic/advisory_latest.json
+calibration_output/
+
+# Logs
+*.log
+logs/

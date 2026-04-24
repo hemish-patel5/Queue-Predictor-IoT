@@ -1,124 +1,48 @@
-#!/usr/bin/env python3
-import RPi.GPIO as GPIO
+# !/usr/bin/env python3
 import time
+import json
+import random
+from datetime import datetime
 
-DHTPIN = 17
+OUTPUT_FILE = "hardware/humiture_latest.json"
 
-GPIO.setmode(GPIO.BCM)
+_sim_temp = 22.0
+_sim_humidity = 55.0
 
-MAX_UNCHANGE_COUNT = 100
+def read_simulated():
+    global _sim_temp, _sim_humidity
+    _sim_temp += random.uniform(-0.3, 0.3)
+    _sim_humidity += random.uniform(-1.0, 1.0)
+    _sim_temp = max(10.0, min(40.0, _sim_temp))
+    _sim_humidity = max(20.0, min(90.0, _sim_humidity))
+    return round(_sim_temp), round(_sim_humidity)
 
-STATE_INIT_PULL_DOWN = 1
-STATE_INIT_PULL_UP = 2
-STATE_DATA_FIRST_PULL_DOWN = 3
-STATE_DATA_PULL_UP = 4
-STATE_DATA_PULL_DOWN = 5
-
-def read_dht11_dat():
-    GPIO.setup(DHTPIN, GPIO.OUT)
-    GPIO.output(DHTPIN, GPIO.HIGH)
-    time.sleep(0.05)
-    GPIO.output(DHTPIN, GPIO.LOW)
-    time.sleep(0.02)
-    GPIO.setup(DHTPIN, GPIO.IN, GPIO.PUD_UP)
-
-    unchanged_count = 0
-    last = -1
-    data = []
-    while True:
-        current = GPIO.input(DHTPIN)
-        data.append(current)
-        if last != current:
-            unchanged_count = 0
-            last = current
-        else:
-            unchanged_count += 1
-            if unchanged_count > MAX_UNCHANGE_COUNT:
-                break
-
-    state = STATE_INIT_PULL_DOWN
-
-    lengths = []
-    current_length = 0
-
-    for current in data:
-        current_length += 1
-
-        if state == STATE_INIT_PULL_DOWN:
-            if current == GPIO.LOW:
-                state = STATE_INIT_PULL_UP
-            else:
-                continue
-        if state == STATE_INIT_PULL_UP:
-            if current == GPIO.HIGH:
-                state = STATE_DATA_FIRST_PULL_DOWN
-            else:
-                continue
-        if state == STATE_DATA_FIRST_PULL_DOWN:
-            if current == GPIO.LOW:
-                state = STATE_DATA_PULL_UP
-            else:
-                continue
-        if state == STATE_DATA_PULL_UP:
-            if current == GPIO.HIGH:
-                current_length = 0
-                state = STATE_DATA_PULL_DOWN
-            else:
-                continue
-        if state == STATE_DATA_PULL_DOWN:
-            if current == GPIO.LOW:
-                lengths.append(current_length)
-                state = STATE_DATA_PULL_UP
-            else:
-                continue
-    if len(lengths) != 40:
-        #print ("Data not good, skip")
-        return False
-
-    shortest_pull_up = min(lengths)
-    longest_pull_up = max(lengths)
-    halfway = (longest_pull_up + shortest_pull_up) / 2
-    bits = []
-    the_bytes = []
-    byte = 0
-
-    for length in lengths:
-        bit = 0
-        if length > halfway:
-            bit = 1
-        bits.append(bit)
-    #print ("bits: %s, length: %d" % (bits, len(bits)))
-    for i in range(0, len(bits)):
-        byte = byte << 1
-        if (bits[i]):
-            byte = byte | 1
-        else:
-            byte = byte | 0
-        if ((i + 1) % 8 == 0):
-            the_bytes.append(byte)
-            byte = 0
-    #print (the_bytes)
-    checksum = (the_bytes[0] + the_bytes[1] + the_bytes[2] + the_bytes[3]) & 0xFF
-    if the_bytes[4] != checksum:
-        #print ("Data not good, skip")
-        return False
-
-    return the_bytes[0], the_bytes[2]
+def comfort_label(temp, humidity):
+    if 20 <= temp <= 24 and 40 <= humidity <= 60:
+        return "comfortable"
+    elif temp > 27 or humidity > 70:
+        return "hot/humid"
+    elif temp < 18:
+        return "cool"
+    return "acceptable"
 
 def main():
-    print ("Raspberry Pi wiringPi DHT11 Temperature test program\n")
-    while True:
-        result = read_dht11_dat()
-        if result:
-            humidity, temperature = result
-            print ("humidity: %s %%,  Temperature: %s C" % (humidity, temperature))
-        time.sleep(1)
-
-def destroy():
-    GPIO.cleanup()
-
-if __name__ == '__main__':
+    print("Humiture Sensor Simulation running...\n")
     try:
-        main()
+        while True:
+            temperature, humidity = read_simulated()
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "temperature_c": temperature,
+                "humidity_pct": humidity,
+                "comfort": comfort_label(temperature, humidity),
+            }
+            print(json.dumps(payload))
+            with open(OUTPUT_FILE, "w") as f:
+                json.dump(payload, f, indent=2)
+            time.sleep(1)
     except KeyboardInterrupt:
-        destroy()
+        print("\nHumiture Sensor Stopped.")
+
+if __name__ == "__main__":
+    main()
