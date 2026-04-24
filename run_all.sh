@@ -97,7 +97,7 @@ sleep 1  # give fusion a moment to write fused_state.json first
 launch "advisory" "python backend/services/llm_advisory.py"
 
 # ── 4. API Server ─────────────────────────────────────────────
-launch "api"      "python backend/services/api_server.py"
+launch "api" "uvicorn backend.services.api_server:app --host 0.0.0.0 --port 5000 --reload"
 
 echo ""
 
