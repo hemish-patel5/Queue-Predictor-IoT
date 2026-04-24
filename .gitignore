@@ -17,7 +17,7 @@ build/
 Thumbs.db
 
 
-hardware/drivers/*_latest.json
+hardware/*_latest.json
 backend/logic/fused_state.json
 backend/logic/advisory_latest.json
 calibration_output/

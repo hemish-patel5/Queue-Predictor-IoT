@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-04-24T10:07:04.998310",
-  "occupancy": 25,
-  "total_entries": 91,
-  "total_exits": 66,
-  "estimated_wait_min": 38
+  "timestamp": "2026-04-24T10:09:00.206304",
+  "occupancy": 0,
+  "total_entries": 2,
+  "total_exits": 2,
+  "estimated_wait_min": 0
 }
