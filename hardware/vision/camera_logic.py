@@ -2,7 +2,6 @@
 # venv\Scripts\activate
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && pip install ultralytics opencv-python
 
-# pi camera: cap = cv2.VideoCapture('/dev/video0')
 
 import cv2
 import json
