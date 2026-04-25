@@ -1,0 +1,53 @@
+# python -m venv venv
+# venv\Scripts\activate
+# pip install ultralytics opencv-python
+
+# pi camera: cap = cv2.VideoCapture('/dev/video0')
+
+import cv2
+import json
+import time
+from datetime import datetime
+from ultralytics import YOLO
+
+OUTPUT_FILE = "hardware/vision_latest.json"
+
+model = YOLO("yolov8n.pt")  # downloads automatically first run
+
+def count_people(frame):
+    results = model(frame, classes=[0], verbose=False)  # class 0 = person
+    return len(results[0].boxes)
+
+def main():
+    cap = cv2.VideoCapture(0)  # 0 = laptop webcam
+    if not cap.isOpened():
+        print("[Vision] Cannot open webcam")
+        return
+
+    print("[Vision] YOLO nano running on webcam...\n")
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("[Vision] Frame read failed, retrying...")
+                continue
+
+            count = count_people(frame)
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "people_in_frame": count,
+                "note": "YOLOv8 nano — anonymous detection",
+            }
+            print(json.dumps(payload))
+            with open(OUTPUT_FILE, "w") as f:
+                json.dump(payload, f, indent=2)
+
+            time.sleep(2)
+
+    except KeyboardInterrupt:
+        print("\n[Vision] Stopped.")
+    finally:
+        cap.release()
+
+if __name__ == "__main__":
+    main()
