@@ -1,6 +1,6 @@
 # python -m venv venv
 # venv\Scripts\activate
-# pip install ultralytics opencv-python
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && pip install ultralytics opencv-python
 
 # pi camera: cap = cv2.VideoCapture('/dev/video0')
 
@@ -21,15 +21,15 @@ def count_people(frame):
 def main():
     cap = cv2.VideoCapture(0)  # 0 = laptop webcam
     if not cap.isOpened():
-        print("[Vision] Cannot open webcam")
+        print("Cannot open webcam")
         return
 
-    print("[Vision] YOLO nano running on webcam...\n")
+    print("YOLO nano running on webcam...\n")
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
-                print("[Vision] Frame read failed, retrying...")
+                print("Frame read failed, retrying...")
                 continue
 
             count = count_people(frame)
@@ -40,12 +40,12 @@ def main():
             }
             print(json.dumps(payload))
             with open(OUTPUT_FILE, "w") as f:
-                json.dump(payload, f, indent=2)
+               json.dump(payload, f, indent=2)
 
-            time.sleep(2)
+            time.sleep(1)
 
     except KeyboardInterrupt:
-        print("\n[Vision] Stopped.")
+        print("\nCamera Stopped.")
     finally:
         cap.release()
 
