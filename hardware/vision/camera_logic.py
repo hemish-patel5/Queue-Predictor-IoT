@@ -1,6 +1,7 @@
 # python -m venv venv
 # venv\Scripts\activate
-# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && pip install ultralytics opencv-python
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu  
+# pip install ultralytics opencv-python
 
 
 import cv2
@@ -41,7 +42,7 @@ def main():
             with open(OUTPUT_FILE, "w") as f:
                json.dump(payload, f, indent=2)
 
-            time.sleep(1)
+            time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("\nCamera Stopped.")
