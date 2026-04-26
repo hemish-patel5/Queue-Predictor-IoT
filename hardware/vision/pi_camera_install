@@ -1,39 +1,14 @@
-Step 1 — Update the Pi
-bashsudo apt update && sudo apt upgrade -y
-
-Step 2 — Install system dependencies
-bashsudo apt install -y python3-pip python3-venv libopenblas-dev
-sudo apt install -y python3-picamera2
-
-Step 3 — Create and activate venv
-bashcd ~/Queue-Predictor-IoT
-python3 -m venv venv --system-site-packages
-source venv/bin/activate
-
---system-site-packages is important on Pi — it lets the venv access picamera2 which is installed system-wide
+Installation of camera:
 
 
-Step 4 — Install PyTorch for Pi (ARM version)
-bashpip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
-This takes a while on Pi — 10-20 minutes is normal
-
-
-Step 5 — Install ultralytics
-bashpip install ultralytics
-
-Step 6 — Enable the camera
-bashsudo raspi-config
-Go to Interface Options → Camera → Enable, then reboot:
-bashsudo reboot
-
-Step 7 — Test camera works
-bashpython3 -c "from picamera2 import Picamera2; cam = Picamera2(); cam.start(); print('Camera ok'); cam.stop()"
-
-Step 8 — Test YOLO works
-bashpython3 -c "from ultralytics import YOLO; model = YOLO('yolov8n.pt'); print('YOLO ok')"
-
-Step 9 — Run the people counter
-bashpython hardware/vision/people_counter.py
-
-The Pi 4 is slow with YOLO but for a 2 second polling interval it's fine — it just means the Pi will be busy during detection but idle between readings.
+pip install opencv-python --break-system-packages
+ 
+sudo apt-get update
+sudo apt-get install libatlas-base-dev libgl1-mesa-glx -y
+ 
+pip install ultralytics --break-system-packages
+ 
+ 
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+ 
