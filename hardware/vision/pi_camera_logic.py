@@ -7,8 +7,8 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
  
 # --- ThingsBoard Configuration ---
-THINGSBOARD_HOST = 'mqtt.thingsboard.cloud'
-ACCESS_TOKEN = 'za6axxlrmmx1wsna0cz8'
+THINGSBOARD_HOST = os.getenv('THINGSBOARD_HOST')
+ACCESS_TOKEN = os.getenv('ACCESS_TOKEN')
  
 # --- Path Setup ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
