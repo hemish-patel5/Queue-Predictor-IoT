@@ -1,0 +1,29 @@
+# Backend Dependencies for Queue Predictor IoT
+
+# Web Framework & Server
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+httpx>=0.27.0
+
+# LLM & AI
+anthropic>=0.25.0
+openai>=1.0.0  # Optional: for OpenAI integration
+
+# Configuration & Environment
+python-dotenv>=1.0.0
+
+# Computer Vision (for camera logic)
+opencv-python>=4.9.0
+numpy>=1.26.0
+
+# Hardware Communication
+pyserial>=3.5
+RPi.GPIO>=0.7.1  # Raspberry Pi GPIO control
+adafruit-circuitpython-dht>=3.7.8  # DHT11/DHT22 sensor
+
+# MQTT Communication (ThingsBoard)
+paho-mqtt>=1.6.0
+
+# Utilities
+pydantic>=2.0.0  # Data validation
+requests>=2.31.0  # HTTP requests
