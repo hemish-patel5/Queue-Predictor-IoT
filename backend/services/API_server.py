@@ -2,67 +2,72 @@
 """
 FastAPI Server for Queue Predictor IoT Dashboard
 Integrates with ThingsBoard to fetch sensor data and expose endpoints for the frontend
+Uses device ACCESS_TOKEN for HTTP API calls — no JWT required
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import httpx
 import os
-import json
 from datetime import datetime
 from dotenv import load_dotenv
 import logging
-
-# Import custom modules
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from logic.sensor_fusion import SensorFusion
 from services.LLM_advisory import AdvisoryService
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
 load_dotenv()
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Queue Predictor IoT API",
     description="Backend API for Queue Time & Comfort Predictor Dashboard",
     version="1.0.0"
 )
 
-# Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to your frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configuration
-THINGSBOARD_HOST = os.getenv('THINGSBOARD_HOST', 'localhost')
-THINGSBOARD_PORT = os.getenv('THINGSBOARD_PORT', 8080)
-DEVICE_ACCESS_TOKEN = os.getenv('ACCESS_TOKEN', '')
-THINGSBOARD_URL = f"http://{THINGSBOARD_HOST}:{THINGSBOARD_PORT}"
+# --- Configuration ---
+ACCESS_TOKEN = os.getenv('ACCESS_TOKEN', '')
+THINGSBOARD_HTTP_URL = os.getenv('THINGSBOARD_HTTP_URL', 'https://thingsboard.cloud')
 
-# Initialize services
+# --- Services ---
 sensor_fusion = SensorFusion()
 advisory_service = AdvisoryService()
 
-# Single Raspberry Pi device with all sensors
-# All sensors connected to one Pi, all data published with single ACCESS_TOKEN
+# --- Sensor keys published by the Pi ---
+ALL_SENSOR_KEYS = [
+    'people_in_frame',
+    'queue_length',
+    'gas_value',
+    'gas_safe',
+    'temperature',
+    'humidity',
+    'sound_value',
+    'noise_level',
+    'trigger_count',
+    'motion_detected',
+    'motion_count',
+]
+
 SENSOR_KEYS = {
     'camera': {
         'name': 'Camera (Vision)',
         'keys': ['people_in_frame', 'queue_length']
     },
     'co2': {
-        'name': 'CO2 Sensor',
-        'keys': ['gas_value', 'co2_ppm', 'gas_safe']
+        'name': 'CO2 / Gas Sensor',
+        'keys': ['gas_value', 'gas_safe']
     },
     'humiture': {
         'name': 'Temperature & Humidity',
@@ -70,7 +75,7 @@ SENSOR_KEYS = {
     },
     'sound': {
         'name': 'Sound Sensor',
-        'keys': ['sound_value', 'noise_db', 'noise_level', 'trigger_count']
+        'keys': ['sound_value', 'noise_level', 'trigger_count']
     },
     'pir': {
         'name': 'Motion Sensor (PIR)',
@@ -78,66 +83,66 @@ SENSOR_KEYS = {
     }
 }
 
+async def get_jwt_token() -> str:
+    url = f"{THINGSBOARD_HTTP_URL}/api/auth/login"
+    payload = {
+        "username": os.getenv('THINGSBOARD_USERNAME'),
+        "password": os.getenv('THINGSBOARD_PASSWORD')
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()['token']
 
-async def fetch_telemetry(device_token: str, keys: list):
-    """
-    Fetch telemetry data from ThingsBoard for a specific device
-    """
+
+async def fetch_telemetry(keys: list) -> dict:
     try:
-        # Endpoint for latest telemetry
-        url = f"{THINGSBOARD_URL}/api/v1/{device_token}/latest/telemetry"
+        token = await get_jwt_token()
+        device_id = os.getenv('THINGSBOARD_DEVICE_ID')
+
+        url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
         params = {'keys': ','.join(keys)}
-        
+        headers = {'X-Authorization': f'Bearer {token}'}
+
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+            response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            logger.info(f"Raw ThingsBoard response: {data}")
+
+            # Extract latest value for each key
+            parsed = {}
+            for key, values in data.items():
+                if values:
+                    parsed[key] = values[0].get('value')
+
+            logger.info(f"Parsed telemetry: {parsed}")
+            return parsed
+
     except httpx.HTTPError as e:
         logger.warning(f"Failed to fetch telemetry: {e}")
         return {}
-
-
-async def fetch_device_telemetry(device_id: str, keys: list, limit: int = 100):
-    """
-    Fetch historical telemetry data from ThingsBoard
-    """
+    
+def safe_float(value, default=0.0):
+    """Safely convert a value to float."""
     try:
-        url = f"{THINGSBOARD_URL}/api/v1/{DEVICE_ACCESS_TOKEN}/timeseries/{device_id}"
-        params = {
-            'keys': ','.join(keys),
-            'limit': limit,
-            'desc': True  # Descending order (most recent first)
-        }
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        logger.warning(f"Failed to fetch device telemetry: {e}")
-        return {}
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 
-async def fetch_attribute(device_token: str, attribute_name: str):
-    """
-    Fetch device attribute from ThingsBoard
-    """
+def safe_int(value, default=0):
+    """Safely convert a value to int."""
     try:
-        url = f"{THINGSBOARD_URL}/api/v1/{device_token}/attributes"
-        params = {'clientKeys': attribute_name}
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        logger.warning(f"Failed to fetch attribute: {e}")
-        return {}
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
+
+# --- Routes ---
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
     return {
         "status": "online",
         "service": "Queue Predictor IoT API",
@@ -145,82 +150,71 @@ async def root():
     }
 
 
+@app.get("/api/v1/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "thingsboard_url": THINGSBOARD_HTTP_URL,
+        "token_configured": bool(ACCESS_TOKEN)
+    }
+
+
 @app.get("/api/v1/live-status")
 async def get_live_status():
     """
-    Get live dashboard status with all sensor data and advisory message
+    Get live dashboard status with all sensor data and advisory message.
     """
     try:
-        # Fetch latest telemetry from all sensors (single device with single token)
-        all_telemetry = await fetch_telemetry(
-            DEVICE_ACCESS_TOKEN,
-            ['people_in_frame', 'gas_value', 'gas_safe', 'temperature', 'humidity', 
-             'sound_value', 'noise_level', 'co2_ppm', 'noise_db', 'motion_detected']
-        )
+        telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
 
-        # Extract values from telemetry with fallback defaults
-        # Camera data
-        people_count = all_telemetry.get('people_in_frame', [{}])[0].get('value', 0) if all_telemetry.get('people_in_frame') else 0
-        
-        # CO2 data - use both gas_value and co2_ppm if available
-        co2_level = all_telemetry.get('co2_ppm', [{}])[0].get('value', 400) if all_telemetry.get('co2_ppm') else 400
-        if not co2_level or co2_level == 400:
-            gas_val = all_telemetry.get('gas_value', [{}])[0].get('value', 0) if all_telemetry.get('gas_value') else 0
-            # Convert gas sensor raw value to approximate ppm if needed
-            co2_level = gas_val if gas_val > 100 else 400
-        
-        # Temperature and Humidity data
-        temperature = all_telemetry.get('temperature', [{}])[0].get('value', 20) if all_telemetry.get('temperature') else 20
-        humidity = all_telemetry.get('humidity', [{}])[0].get('value', 50) if all_telemetry.get('humidity') else 50
-        
-        # Sound data - use both sound_value and noise_db if available
-        noise_db = all_telemetry.get('noise_db', [{}])[0].get('value', 40) if all_telemetry.get('noise_db') else 40
-        if not noise_db or noise_db == 40:
-            sound_val = all_telemetry.get('sound_value', [{}])[0].get('value', 0) if all_telemetry.get('sound_value') else 0
-            # Convert sound sensor value to approximate dB
-            noise_db = sound_val if sound_val > 20 else 40
+        # Extract values with safe defaults
+        people_count    = safe_int(telemetry.get('people_in_frame', 0))
+        gas_value       = safe_float(telemetry.get('gas_value', 0))
+        gas_safe        = telemetry.get('gas_safe', True)
+        temperature     = safe_float(telemetry.get('temperature', 20))
+        humidity        = safe_float(telemetry.get('humidity', 50))
+        sound_value     = safe_float(telemetry.get('sound_value', 0))
+        noise_level     = telemetry.get('noise_level', 'quiet')
+        motion_detected = telemetry.get('motion_detected', False)
 
-        # Convert people_count to integer
-        try:
-            people_count = int(people_count)
-        except (ValueError, TypeError):
-            people_count = 0
-
-        # Calculate estimated wait time (2 minutes per person)
+        # Estimated wait time: 2 minutes per person
         estimated_wait_time = people_count * 2
 
-        # Use sensor fusion to calculate comfort metrics
+        # Comfort metrics via sensor fusion
         comfort_data = sensor_fusion.calculate_comfort_metrics(
             temperature=temperature,
             humidity=humidity,
-            co2_level=co2_level,
-            noise_level=noise_db
+            co2_level=gas_value,
+            noise_level=sound_value
         )
 
-        # Get LLM advisory message
+        # LLM advisory
         advisory_message = advisory_service.generate_advisory(
             people_count=people_count,
-            co2_level=co2_level,
+            co2_level=gas_value,
             temperature=temperature,
             humidity=humidity,
-            noise_level=noise_db,
-            comfort_score=comfort_data['comfort_score']
+            noise_level=sound_value,
+            comfort_score=comfort_data.get('comfort_score', 0)
         )
 
         return {
             "timestamp": datetime.now().isoformat(),
             "live_status": {
                 "people_count": people_count,
-                "estimated_wait_time": estimated_wait_time,  # in minutes
-                "advisory_message": advisory_message
+                "estimated_wait_time": estimated_wait_time,
+                "advisory_message": advisory_message,
+                "motion_detected": motion_detected
             },
             "environmental_metrics": {
-                "temperature": round(float(temperature), 1),
-                "humidity": round(float(humidity), 1),
-                "co2_ppm": round(float(co2_level), 0),
-                "noise_db": round(float(noise_db), 1),
-                "air_quality_status": comfort_data['air_quality'],
-                "comfort_status": comfort_data['thermal_comfort']
+                "temperature": round(temperature, 1),
+                "humidity": round(humidity, 1),
+                "gas_value": round(gas_value, 1),
+                "gas_safe": gas_safe,
+                "sound_value": round(sound_value, 1),
+                "noise_level": noise_level,
+                "air_quality_status": comfort_data.get('air_quality', 'unknown'),
+                "comfort_status": comfort_data.get('thermal_comfort', 'unknown')
             },
             "comfort_data": comfort_data
         }
@@ -230,63 +224,23 @@ async def get_live_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/history")
-async def get_history(hours: int = 6, limit: int = 100):
-    """
-    Get historical data for trends visualization
-    """
-    try:
-        # This endpoint would need device IDs from ThingsBoard
-        # For now, returning a template response
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "hours": hours,
-            "queue_history": [],
-            "co2_history": [],
-            "sound_history": [],
-            "temperature_history": [],
-            "humidity_history": []
-        }
-    except Exception as e:
-        logger.error(f"Error fetching history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/api/v1/sensor-health")
 async def get_sensor_health():
     """
-    Get health status of all connected sensors
+    Get health status of all connected sensors.
+    A sensor is considered online if its key exists in the latest telemetry.
     """
     try:
-        # Try to fetch data from all sensor keys to determine if they're online
+        telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
         sensor_health = {}
-        
-        # Single device publishes all sensors with one token
-        all_telemetry = await fetch_telemetry(
-            DEVICE_ACCESS_TOKEN,
-            list(set([key for sensor in SENSOR_KEYS.values() for key in sensor['keys']]))
-        )
 
         for sensor_key, sensor_info in SENSOR_KEYS.items():
-            try:
-                # Check if any of this sensor's keys have recent data
-                is_online = False
-                for key in sensor_info['keys']:
-                    if key in all_telemetry and all_telemetry[key]:
-                        is_online = True
-                        break
-                
-                sensor_health[sensor_key] = {
-                    "name": sensor_info['name'],
-                    "status": "online" if is_online else "offline",
-                    "last_update": datetime.now().isoformat() if is_online else None
-                }
-            except Exception as e:
-                sensor_health[sensor_key] = {
-                    "name": sensor_info['name'],
-                    "status": "offline",
-                    "error": str(e)
-                }
+            is_online = any(key in telemetry for key in sensor_info['keys'])
+            sensor_health[sensor_key] = {
+                "name": sensor_info['name'],
+                "status": "online" if is_online else "offline",
+                "last_update": datetime.now().isoformat() if is_online else None
+            }
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -301,33 +255,21 @@ async def get_sensor_health():
 @app.get("/api/v1/comfort-score")
 async def get_comfort_score():
     """
-    Get current comfort score and breakdown
+    Get current comfort score and breakdown.
     """
     try:
-        # Fetch all sensor data from single device
-        all_telemetry = await fetch_telemetry(
-            DEVICE_ACCESS_TOKEN,
-            ['temperature', 'humidity', 'co2_ppm', 'gas_value', 'noise_db', 'sound_value']
-        )
+        telemetry = await fetch_telemetry(['temperature', 'humidity', 'gas_value', 'sound_value'])
 
-        temperature = all_telemetry.get('temperature', [{}])[0].get('value', 20) if all_telemetry.get('temperature') else 20
-        humidity = all_telemetry.get('humidity', [{}])[0].get('value', 50) if all_telemetry.get('humidity') else 50
-        
-        co2_level = all_telemetry.get('co2_ppm', [{}])[0].get('value', 400) if all_telemetry.get('co2_ppm') else 400
-        if not co2_level or co2_level == 400:
-            gas_val = all_telemetry.get('gas_value', [{}])[0].get('value', 0) if all_telemetry.get('gas_value') else 0
-            co2_level = gas_val if gas_val > 100 else 400
-        
-        noise_level = all_telemetry.get('noise_db', [{}])[0].get('value', 40) if all_telemetry.get('noise_db') else 40
-        if not noise_level or noise_level == 40:
-            sound_val = all_telemetry.get('sound_value', [{}])[0].get('value', 0) if all_telemetry.get('sound_value') else 0
-            noise_level = sound_val if sound_val > 20 else 40
+        temperature = safe_float(telemetry.get('temperature', 20))
+        humidity    = safe_float(telemetry.get('humidity', 50))
+        gas_value   = safe_float(telemetry.get('gas_value', 0))
+        sound_value = safe_float(telemetry.get('sound_value', 0))
 
         comfort_data = sensor_fusion.calculate_comfort_metrics(
             temperature=temperature,
             humidity=humidity,
-            co2_level=co2_level,
-            noise_level=noise_level
+            co2_level=gas_value,
+            noise_level=sound_value
         )
 
         return {
@@ -340,12 +282,21 @@ async def get_comfort_score():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/health")
-async def health_check():
-    """Health check endpoint"""
+@app.get("/api/v1/history")
+async def get_history(hours: int = 6, limit: int = 100):
+    """
+    Placeholder for historical data endpoint.
+    ThingsBoard historical telemetry requires JWT auth — implement if needed.
+    """
     return {
-        "status": "healthy",
-        "thingsboard_url": THINGSBOARD_URL
+        "timestamp": datetime.now().isoformat(),
+        "hours": hours,
+        "message": "Historical data requires ThingsBoard JWT authentication. Use ThingsBoard dashboard for history.",
+        "queue_history": [],
+        "gas_history": [],
+        "sound_history": [],
+        "temperature_history": [],
+        "humidity_history": []
     }
 
 
