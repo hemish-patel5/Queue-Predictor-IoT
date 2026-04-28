@@ -25,12 +25,12 @@ export default function EnvironmentalMetrics({ data }) {
   };
 
   // Helper function to get color based on noise
-  const getNoiseColor = (db) => {
-    if (db <= 50) return '#4ade80';
-    if (db <= 65) return '#facc15';
-    if (db <= 80) return '#fb923c';
-    return '#ef4444';
-  };
+const getNoiseColor = (val) => {
+  if (val <= 80) return '#4ade80';
+  if (val <= 150) return '#facc15';
+  if (val <= 200) return '#fb923c';
+  return '#ef4444';
+};
 
   // Helper function to get thermal comfort color
   const getThermalColor = (status) => {
@@ -75,7 +75,7 @@ export default function EnvironmentalMetrics({ data }) {
             <span className="metric-icon">💨</span>
           </div>
           <div className="co2-display">
-            <div className="co2-value">{metrics.co2_ppm}</div>
+            <div className="co2-value">{metrics.gas_value}</div>
             <div className="co2-unit">ppm</div>
           </div>
           <div
@@ -104,15 +104,15 @@ export default function EnvironmentalMetrics({ data }) {
             <span className="metric-icon">🔊</span>
           </div>
           <div className="noise-display">
-            <div className="noise-value">{metrics.noise_db}</div>
+            <div className="noise-value">{metrics.sound_value}</div>
             <div className="noise-unit">dB</div>
           </div>
           <div className="noise-bar">
             <div
               className="noise-bar-fill"
               style={{
-                width: Math.min((metrics.noise_db / 100) * 100, 100) + '%',
-                backgroundColor: getNoiseColor(metrics.noise_db),
+                width: Math.min((metrics.sound_value / 100) * 100, 100) + '%',
+                backgroundColor: getNoiseColor(metrics.sound_value),
               }}
             ></div>
           </div>
