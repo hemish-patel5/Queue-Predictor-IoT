@@ -19,11 +19,11 @@ def setup():
     ADC.setup(0x48)
 
 def noise_label(value):
-    if value < 50:
-        return "loud"
-    elif value < 150:
+    if value > 200:
+        return "Quiet"
+    elif value > 100:
         return "moderate"
-    return "quiet"
+    return "Loud"
 
 def main():
     setup()

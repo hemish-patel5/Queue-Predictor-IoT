@@ -14,7 +14,7 @@ THINGSBOARD_HOST = os.getenv('THINGSBOARD_HOST')
 ACCESS_TOKEN = os.getenv('ACCESS_TOKEN')
 
 # --- Gas Sensor Configuration ---
-DO = 17
+DO = 27
 GPIO.setmode(GPIO.BCM)
 
 def setup():
@@ -54,7 +54,7 @@ def main():
     status = 1
     while True:
         try:
-            gas_value = ADC.read(0)
+            gas_value = ADC.read(1)
             tmp = GPIO.input(DO)
 
             if tmp != status:
