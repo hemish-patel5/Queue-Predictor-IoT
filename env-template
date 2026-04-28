@@ -1,0 +1,7 @@
+THINGSBOARD_HOST = 'mqtt.thingsboard.cloud'
+ACCESS_TOKEN = 'enteraccesstokenhere'
+
+THINGSBOARD_HTTP_URL=https://thingsboard.cloud
+THINGSBOARD_USERNAME=fwf4929@autuni.ac.nz
+THINGSBOARD_PASSWORD=enterpasswordhere
+THINGSBOARD_DEVICE_ID=92b6f9d0-3f73-11f1-9234-b7886a2047b6
