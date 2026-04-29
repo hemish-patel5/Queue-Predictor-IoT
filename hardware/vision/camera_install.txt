@@ -12,3 +12,9 @@ pip install ultralytics --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
  
+Download onnx:
+sudo pip3 install onnx onnxruntime --break-system-packages
+
+Test it Works:
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320)"
+
