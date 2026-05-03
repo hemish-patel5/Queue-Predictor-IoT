@@ -1,170 +1,150 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Chart, LineController, LineElement, PointElement, LinearScale, TimeScale, CategoryScale, Title, Tooltip, Legend } from 'chart.js';
+import 'chartjs-adapter-date-fns';
+
+Chart.register(LineController, LineElement, PointElement, LinearScale, TimeScale, CategoryScale, Title, Tooltip, Legend);
 
 export default function HistoryTab({ apiBaseUrl }) {
-  const [history, setHistory] = useState(null);
-  const [hours, setHours] = useState(6);
+  // default to 7 days (168 hours)
+  const [hours, setHours] = useState(168);
   const [loading, setLoading] = useState(true);
+  const queueChartRef = useRef(null);
+  const envChartRef = useRef(null);
+  const queueChartInstance = useRef(null);
+  const envChartInstance = useRef(null);
+
+  const fetchAndRender = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/v1/history?hours=${hours}&limit=500`);
+      if (!res.ok) throw new Error('Failed to fetch history');
+      const data = await res.json();
+
+      // Prepare datasets: ensure numeric y values where possible
+      const mapPoints = (arr) => (arr || []).map((p) => ({ x: p.ts, y: p.value === null ? null : (isNaN(Number(p.value)) ? p.value : Number(p.value)) }));
+
+      const queueData = mapPoints(data.queue_history);
+      const tempData = mapPoints(data.temperature_history);
+      const gasData = mapPoints(data.gas_history);
+      const soundData = mapPoints(data.sound_history);
+
+      // compute x-axis window based on selected hours
+      const nowMs = Date.now();
+      const startMs = nowMs - hours * 60 * 60 * 1000;
+      const timeUnit = hours <= 1 ? 'minute' : (hours <= 24 ? 'hour' : 'day');
+
+      // Initialize or update queue chart
+      if (!queueChartInstance.current) {
+        queueChartInstance.current = new Chart(queueChartRef.current, {
+          type: 'line',
+          data: {
+            datasets: [
+              {
+                label: 'People in Frame',
+                data: queueData,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.2)',
+                tension: 0.2,
+                parsing: false,
+              },
+            ],
+          },
+          options: {
+            animation: false,
+            scales: {
+              x: { type: 'time', time: { unit: timeUnit }, min: startMs, max: nowMs, title: { display: true, text: 'Time' } },
+              y: { beginAtZero: true, title: { display: true, text: 'Count' } }
+            },
+          },
+        });
+      } else {
+        queueChartInstance.current.data.datasets[0].data = queueData;
+        // update x-axis window and unit
+        if (queueChartInstance.current.options && queueChartInstance.current.options.scales && queueChartInstance.current.options.scales.x) {
+          queueChartInstance.current.options.scales.x.time.unit = timeUnit;
+          queueChartInstance.current.options.scales.x.min = startMs;
+          queueChartInstance.current.options.scales.x.max = nowMs;
+        }
+        queueChartInstance.current.update('none');
+      }
+
+      // Initialize or update env chart (temp, co2, sound)
+      if (!envChartInstance.current) {
+        envChartInstance.current = new Chart(envChartRef.current, {
+          type: 'line',
+          data: {
+            datasets: [
+              { label: 'Temperature (°C)', data: tempData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', parsing: false },
+              { label: 'CO₂ (ppm)', data: gasData, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', parsing: false },
+              { label: 'Sound', data: soundData, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', parsing: false },
+            ]
+          },
+          options: { animation: false, scales: { x: { type: 'time', time: { unit: timeUnit }, min: startMs, max: nowMs, title: { display: true, text: 'Time' } }, y: { beginAtZero: true, title: { display: true, text: 'Value' } } } }
+        });
+      } else {
+        envChartInstance.current.data.datasets[0].data = tempData;
+        envChartInstance.current.data.datasets[1].data = gasData;
+        envChartInstance.current.data.datasets[2].data = soundData;
+        if (envChartInstance.current.options && envChartInstance.current.options.scales && envChartInstance.current.options.scales.x) {
+          envChartInstance.current.options.scales.x.time.unit = timeUnit;
+          envChartInstance.current.options.scales.x.min = startMs;
+          envChartInstance.current.options.scales.x.max = nowMs;
+        }
+        envChartInstance.current.update('none');
+      }
+
+    } catch (err) {
+      console.error('Error fetching history:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const response = await fetch(
-          `${apiBaseUrl}/api/v1/history?hours=${hours}&limit=100`
-        );
-        if (!response.ok) throw new Error('Failed to fetch history');
-        const data = await response.json();
-        setHistory(data);
-      } catch (error) {
-        console.error('Error fetching history:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    fetchAndRender();
 
-    fetchHistory();
+    // Refresh charts every 2 minutes (120000 ms)
+    const interval = setInterval(fetchAndRender, 120000);
+    return () => clearInterval(interval);
   }, [hours, apiBaseUrl]);
-
-  if (loading) {
-    return <div className="history-tab">Loading historical data...</div>;
-  }
 
   return (
     <div className="history-tab">
       <div className="history-controls">
         <label htmlFor="hours-select">Show data for last:</label>
-        <select
-          id="hours-select"
-          value={hours}
-          onChange={(e) => setHours(parseInt(e.target.value))}
-        >
+        <select id="hours-select" value={hours} onChange={(e) => setHours(parseInt(e.target.value))} style={{ color: 'black' }}>
           <option value={1}>1 hour</option>
           <option value={3}>3 hours</option>
           <option value={6}>6 hours</option>
           <option value={12}>12 hours</option>
           <option value={24}>24 hours</option>
+          <option value={48}>2 days</option>
+          <option value={72}>3 days</option>
+          <option value={96}>4 days</option>
+          <option value={120}>5 days</option>
+          <option value={144}>6 days</option>
+          <option value={168}>7 days</option>
         </select>
       </div>
 
       <div className="history-content">
         <div className="history-chart">
           <h3>Queue History</h3>
-          <div className="chart-placeholder">
-            <p>📊 Queue Occupancy Timeline</p>
-            <p className="chart-hint">
-              Integration with charting library (Chart.js or Recharts recommended)
-            </p>
-            <svg viewBox="0 0 400 200" className="simple-chart">
-              <line
-                x1="20"
-                y1="180"
-                x2="380"
-                y2="180"
-                stroke="#ccc"
-                strokeWidth="2"
-              />
-              <line
-                x1="20"
-                y1="20"
-                x2="20"
-                y2="180"
-                stroke="#ccc"
-                strokeWidth="2"
-              />
-              {/* Simple bars representing data */}
-              <rect x="40" y="140" width="20" height="40" fill="#3b82f6" />
-              <rect x="80" y="100" width="20" height="80" fill="#3b82f6" />
-              <rect x="120" y="80" width="20" height="100" fill="#3b82f6" />
-              <rect x="160" y="120" width="20" height="60" fill="#3b82f6" />
-              <rect x="200" y="60" width="20" height="120" fill="#3b82f6" />
-              <rect x="240" y="100" width="20" height="80" fill="#3b82f6" />
-              <rect x="280" y="110" width="20" height="70" fill="#3b82f6" />
-              <rect x="320" y="130" width="20" height="50" fill="#3b82f6" />
-            </svg>
-          </div>
+          <canvas ref={queueChartRef} height={180} />
+          {loading && <p className="chart-loading">Loading chart...</p>}
         </div>
 
         <div className="history-chart">
           <h3>Environmental Conditions</h3>
-          <div className="chart-placeholder">
-            <p>🌡️ Temperature, CO₂, and Noise Trends</p>
-            <p className="chart-hint">
-              Shows correlation between occupancy and environmental factors
-            </p>
-            <svg viewBox="0 0 400 200" className="simple-chart">
-              <line
-                x1="20"
-                y1="180"
-                x2="380"
-                y2="180"
-                stroke="#ccc"
-                strokeWidth="2"
-              />
-              <line
-                x1="20"
-                y1="20"
-                x2="20"
-                y2="180"
-                stroke="#ccc"
-                strokeWidth="2"
-              />
-              {/* Multiple lines for different metrics */}
-              <polyline
-                points="40,120 80,100 120,90 160,110 200,70 240,100 280,110 320,130"
-                stroke="#ef4444"
-                strokeWidth="2"
-                fill="none"
-              />
-              <polyline
-                points="40,130 80,120 120,110 160,130 200,90 240,120 280,125 320,140"
-                stroke="#3b82f6"
-                strokeWidth="2"
-                fill="none"
-              />
-              <polyline
-                points="40,110 80,100 120,95 160,115 200,75 240,105 280,115 320,125"
-                stroke="#10b981"
-                strokeWidth="2"
-                fill="none"
-              />
-            </svg>
-            <div className="chart-legend">
-              <span style={{ color: '#ef4444' }}>— Temperature</span>
-              <span style={{ color: '#3b82f6' }}>— CO₂ Level</span>
-              <span style={{ color: '#10b981' }}>— Noise Level</span>
-            </div>
+          <canvas ref={envChartRef} height={180} />
+          {loading && <p className="chart-loading">Loading chart...</p>}
+          <div className="chart-legend">
+            <span style={{ color: '#ef4444' }}>— Temperature</span>
+            <span style={{ color: '#3b82f6' }}>— CO₂ Level</span>
+            <span style={{ color: '#10b981' }}>— Sound Level</span>
           </div>
         </div>
 
-        <div className="history-tips">
-          <h4>💡 Insights</h4>
-          <ul>
-            <li>
-              <strong>Peak Times:</strong> Notice when the queue is busiest to plan your
-              visits accordingly
-            </li>
-            <li>
-              <strong>Environmental Impact:</strong> See how occupancy affects comfort
-              metrics
-            </li>
-            <li>
-              <strong>Best Visit Times:</strong> Identify quietest periods for a better
-              experience
-            </li>
-            <li>
-              <strong>Air Quality Correlation:</strong> Higher occupancy often means
-              higher CO₂ levels
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div className="implementation-note">
-        <p>
-          <strong>📝 Implementation Note:</strong> For full functionality, integrate with
-          a charting library like <code>Chart.js</code>, <code>Recharts</code>, or{' '}
-          <code>Victory</code>. The backend returns telemetry data from ThingsBoard that
-          can be visualized here.
-        </p>
       </div>
     </div>
   );

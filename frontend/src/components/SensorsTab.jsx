@@ -21,33 +21,43 @@ export default function SensorsTab({ sensorHealth, apiBaseUrl }) {
     camera: {
       name: 'Camera (Vision)',
       description: 'Detects people count using anonymous head/body detection',
-      keys: ['people_count', 'queue_length'],
+      keys: ['people_in_frame', 'queue_length'],
       status: sensors.camera?.status || 'offline',
+      last_update: sensors.camera?.last_update,
+      stale_seconds: sensors.camera?.stale_seconds
     },
     co2: {
       name: 'CO₂ Sensor',
       description: 'Monitors air quality levels in PPM',
-      keys: ['co2_level', 'co2_ppm'],
+      keys: ['gas_value', 'gas_safe'],
       status: sensors.co2?.status || 'offline',
+      last_update: sensors.co2?.last_update,
+      stale_seconds: sensors.co2?.stale_seconds
     },
     humiture: {
       name: 'Temperature & Humidity Sensor',
       description: 'Tracks thermal comfort conditions (Temperature, Humidity)',
       keys: ['temperature', 'humidity'],
       status: sensors.humiture?.status || 'offline',
+      last_update: sensors.humiture?.last_update,
+      stale_seconds: sensors.humiture?.stale_seconds
     },
     sound: {
       name: 'Sound/Noise Sensor',
       description: 'Measures ambient noise level in decibels',
-      keys: ['sound_level', 'noise_db'],
+      keys: ['sound_value', 'noise_level'],
       status: sensors.sound?.status || 'offline',
+      last_update: sensors.sound?.last_update,
+      stale_seconds: sensors.sound?.stale_seconds
     },
     pir: {
-      name: 'Motion Sensor (PIR) - Draft',
-      description: 'Detects motion and presence (implementation pending hardware)',
+      name: 'Motion Sensor (PIR)',
+      description: 'Detects motion and presence',
       keys: ['motion_detected', 'motion_count'],
-      status: 'offline',
-      isDraft: true,
+      status: sensors.pir?.status || 'offline',
+      last_update: sensors.pir?.last_update,
+      stale_seconds: sensors.pir?.stale_seconds,
+      isDraft: false,
     },
   };
 
@@ -105,6 +115,27 @@ export default function SensorsTab({ sensorHealth, apiBaseUrl }) {
             </div>
 
             <p className="sensor-description">{config.description}</p>
+
+            <div className="sensor-last-update">
+              {config.last_update ? (
+                <>
+                  <small>Last update: {new Date(config.last_update).toLocaleString()}</small>
+                  {config.stale_seconds !== undefined ? (
+                    <small> — {Math.max(0, config.stale_seconds)}s old</small>
+                  ) : (
+                    <small> — N/A</small>
+                  )}
+                </>
+              ) : (
+                <small>Last update: N/A</small>
+              )}
+            </div>
+
+            {config.alert && (
+              <div className="sensor-alert">
+                <strong style={{ color: '#ef4444' }}>⚠️ Sensor Offline / Alert</strong>
+              </div>
+            )}
 
             <div className="sensor-keys">
               <span className="keys-label">Data Keys:</span>

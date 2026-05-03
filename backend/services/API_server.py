@@ -97,6 +97,7 @@ async def get_jwt_token() -> str:
 
 async def fetch_telemetry(keys: list) -> dict:
     try:
+        # Use ThingsBoard JWT auth (username/password) to query device telemetry.
         token = await get_jwt_token()
         device_id = os.getenv('THINGSBOARD_DEVICE_ID')
 
@@ -110,11 +111,15 @@ async def fetch_telemetry(keys: list) -> dict:
             data = response.json()
             logger.info(f"Raw ThingsBoard response: {data}")
 
-            # Extract latest value for each key
+            # Extract latest value and timestamp for each key
             parsed = {}
             for key, values in data.items():
                 if values:
-                    parsed[key] = values[0].get('value')
+                    first = values[0]
+                    parsed[key] = {
+                        'value': first.get('value'),
+                        'ts': first.get('ts')
+                    }
 
             logger.info(f"Parsed telemetry: {parsed}")
             return parsed
@@ -126,7 +131,12 @@ async def fetch_telemetry(keys: list) -> dict:
 def safe_float(value, default=0.0):
     """Safely convert a value to float."""
     try:
-        return float(value)
+        # Accept either raw value or dict with 'value'
+        if isinstance(value, dict):
+            v = value.get('value')
+        else:
+            v = value
+        return float(v)
     except (ValueError, TypeError):
         return default
 
@@ -134,9 +144,34 @@ def safe_float(value, default=0.0):
 def safe_int(value, default=0):
     """Safely convert a value to int."""
     try:
-        return int(value)
+        if isinstance(value, dict):
+            v = value.get('value')
+        else:
+            v = value
+        return int(v)
     except (ValueError, TypeError):
         return default
+
+
+def is_recent(entry, max_age_seconds=300):
+    """Return True if telemetry entry has a timestamp within max_age_seconds.
+    Entry may be either a dict {'value':..., 'ts':...} or a raw value.
+    Raw values are treated as recent (True) since no timestamp is available.
+    """
+    if entry is None:
+        return False
+    if isinstance(entry, dict):
+        ts = entry.get('ts')
+        if not ts:
+            return True
+        try:
+            now_ms = int(datetime.utcnow().timestamp() * 1000)
+            age_ms = now_ms - int(ts)
+            return age_ms <= (max_age_seconds * 1000)
+        except Exception:
+            return True
+    # raw scalar
+    return True
 
 
 # --- Routes ---
@@ -234,13 +269,66 @@ async def get_sensor_health():
         telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
         sensor_health = {}
 
+        # Freshness cutoff in seconds (user requested 10 seconds)
+        FRESHNESS_SECONDS = 10
+
         for sensor_key, sensor_info in SENSOR_KEYS.items():
-            is_online = any(key in telemetry for key in sensor_info['keys'])
-            sensor_health[sensor_key] = {
-                "name": sensor_info['name'],
-                "status": "online" if is_online else "offline",
-                "last_update": datetime.now().isoformat() if is_online else None
-            }
+                latest_ts = None
+                # Find the most recent timestamp among the sensor's keys (timestamps in ms)
+                for key in sensor_info['keys']:
+                    entry = telemetry.get(key)
+                    if entry is None:
+                        continue
+                    # entry should be a dict {'value': .., 'ts': ..}; ignore raw scalars
+                    if isinstance(entry, dict):
+                        ts = entry.get('ts')
+                        if not ts:
+                            continue
+                        try:
+                            ts_int = int(ts)
+                        except Exception:
+                            continue
+                        if latest_ts is None or ts_int > latest_ts:
+                            latest_ts = ts_int
+
+                # Determine online/offline based on latest valid timestamp only
+                now_ms = int(datetime.utcnow().timestamp() * 1000)
+                is_online = False
+                last_update = None
+                stale_seconds = None
+
+                if latest_ts is not None:
+                    # Normalize ts: ThingsBoard may return seconds or milliseconds.
+                    if latest_ts < 1_000_000_000_000:
+                        ts_ms = latest_ts * 1000
+                    else:
+                        ts_ms = latest_ts
+
+                    # Ignore timestamps that are unreasonably in the future
+                    FUTURE_ALLOW_MS = 30 * 1000  # allow up to 30s clock skew into future
+                    if ts_ms > now_ms + FUTURE_ALLOW_MS:
+                        # invalid future timestamp -> treat as missing
+                        ts_ms = None
+
+                    if ts_ms is not None:
+                        age_ms = now_ms - int(ts_ms)
+                        stale_seconds = int(max(0, age_ms) / 1000)
+                        is_online = age_ms <= (FRESHNESS_SECONDS * 1000)
+                        try:
+                            last_update = datetime.utcfromtimestamp(int(ts_ms) / 1000).isoformat()
+                        except Exception:
+                            last_update = datetime.utcnow().isoformat()
+                else:
+                    # No timestamped telemetry found; do not treat raw values as authoritative
+                    is_online = False
+
+                sensor_health[sensor_key] = {
+                    "name": sensor_info['name'],
+                    "status": "online" if is_online else "offline",
+                    "last_update": last_update,
+                    "stale_seconds": stale_seconds,
+                    "alert": not is_online
+                }
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -288,16 +376,79 @@ async def get_history(hours: int = 6, limit: int = 100):
     Placeholder for historical data endpoint.
     ThingsBoard historical telemetry requires JWT auth — implement if needed.
     """
-    return {
-        "timestamp": datetime.now().isoformat(),
-        "hours": hours,
-        "message": "Historical data requires ThingsBoard JWT authentication. Use ThingsBoard dashboard for history.",
-        "queue_history": [],
-        "gas_history": [],
-        "sound_history": [],
-        "temperature_history": [],
-        "humidity_history": []
-    }
+    try:
+        # Query ThingsBoard for timeseries between start and end timestamps
+        token = await get_jwt_token()
+        device_id = os.getenv('THINGSBOARD_DEVICE_ID')
+
+        end_ts = int(datetime.utcnow().timestamp() * 1000)
+        start_ts = end_ts - int(hours * 3600 * 1000)
+
+        keys = [
+            'people_in_frame',
+            'queue_length',
+            'gas_value',
+            'sound_value',
+            'temperature',
+            'humidity'
+        ]
+
+        url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
+        params = {
+            'keys': ','.join(keys),
+            'startTs': start_ts,
+            'endTs': end_ts,
+            'limit': limit
+        }
+        headers = {'X-Authorization': f'Bearer {token}'}
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        # Normalize into arrays sorted by timestamp asc
+        def normalize_hist(key):
+            values = data.get(key, []) or []
+            out = []
+            for item in values:
+                try:
+                    out.append({
+                        'ts': int(item.get('ts')),
+                        'value': item.get('value')
+                    })
+                except Exception:
+                    continue
+            out.sort(key=lambda x: x['ts'])
+            return out
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "hours": hours,
+            "queue_history": normalize_hist('people_in_frame'),
+            "queue_length_history": normalize_hist('queue_length'),
+            "gas_history": normalize_hist('gas_value'),
+            "sound_history": normalize_hist('sound_value'),
+            "temperature_history": normalize_hist('temperature'),
+            "humidity_history": normalize_hist('humidity')
+        }
+
+    except httpx.HTTPError as e:
+        logger.warning(f"Failed to fetch history: {e}")
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "hours": hours,
+            "message": f"Failed to fetch history: {e}",
+            "queue_history": [],
+            "queue_length_history": [],
+            "gas_history": [],
+            "sound_history": [],
+            "temperature_history": [],
+            "humidity_history": []
+        }
+    except Exception as e:
+        logger.error(f"Error in history endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
