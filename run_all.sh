@@ -80,11 +80,11 @@ echo ""
 
 # ── 1. Sensor Drivers ────────────────────────────────────────
 echo "[ Sensor Drivers ]"
-launch "dht22"    "python hardware/drivers/dht22_driver.py"
-launch "co2"      "python hardware/drivers/co2_driver.py"
-launch "sound"    "python hardware/drivers/sound_driver.py"
-launch "pir"      "python hardware/drivers/pir_counter.py"
-launch "vision"   "python hardware/vision/people_counter.py"
+launch "dht22"    "python hardware/drivers/Humiture_Sensor.py"
+launch "co2"      "python hardware/drivers/co2_sensor.py"
+launch "sound"    "python hardware/drivers/sound_sensor.py"
+launch "pir"      "python hardware/drivers/PIR_sensor.py"
+launch "vision"   "python hardware/vision/pi_camera_logic.py"
 
 echo ""
 
@@ -94,16 +94,23 @@ launch "fusion"   "python backend/logic/sensor_fusion.py"
 sleep 1  # give fusion a moment to write fused_state.json first
 
 # ── 3. LLM Advisory ──────────────────────────────────────────
-launch "advisory" "python backend/services/llm_advisory.py"
+launch "advisory" "python backend/services/LLM_advisory.py"
 
 # ── 4. API Server ─────────────────────────────────────────────
-launch "api" "uvicorn backend.services.api_server:app --host 0.0.0.0 --port 5000 --reload"
+# Use correct module name casing: API_server.py defines the FastAPI app
+launch "api" "uvicorn backend.services.API_server:app --host 0.0.0.0 --port 5000 --reload"
 
 echo ""
 
 # ── 5. Frontend ───────────────────────────────────────────────
 echo "[ Frontend ]"
-launch "dashboard" "python3 -m http.server 8080 --directory frontend"
+# Prefer python3, but fall back to python if not available
+if command -v python3 >/dev/null 2>&1; then
+  DASH_PY=python3
+else
+  DASH_PY=python
+fi
+launch "dashboard" "$DASH_PY -m http.server 8080 --directory frontend"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
