@@ -68,33 +68,36 @@ if (-not (Test-Path "$ProjectDir\.env")) {
 }
 
 # Helper: start process and record PID
-function Start-ServiceProc($name, $cmd, $args) {
+function Start-ServiceProc {
+    param($name, $cmd, $args)
     $log = Join-Path $LogDir "$name.log"
     Write-Info "Starting $name... (log: $log)"
-    $startInfo = @{FilePath=$cmd; ArgumentList=$args; RedirectStandardOutput=$true; RedirectStandardError=$true; UseNewWindow=$false}
-    $proc = Start-Process @startInfo -PassThru
-    # Write PID
+    # Use Start-Process in a way compatible with Windows PowerShell 5.1
+    $proc = Start-Process -FilePath $cmd -ArgumentList $args -NoNewWindow -PassThru
+    # Ensure PID file exists and append the PID
+    if (-not (Test-Path $PidFile)) { New-Item -ItemType File -Path $PidFile -Force | Out-Null }
     $proc.Id | Out-File -FilePath $PidFile -Append -Encoding ascii
-    Write-Info "✔ $name -> PID $($proc.Id)"
+    Write-Info ("$name -> PID {0}" -f $proc.Id)
 }
 
 # Ensure .pids file is cleared
 if (Test-Path $PidFile) { Remove-Item $PidFile -Force }
 
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host "  Queue & Comfort Predictor — Starting (Windows)"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host '------------------------------------------------'
+Write-Host '  Queue & Comfort Predictor - Starting (Windows)'
+Write-Host '------------------------------------------------'
 
 # Sensor drivers (on Windows these may be no-ops / develop-only)
-Write-Host "[ Sensor Drivers ]"
+Write-Host '[ Sensor Drivers ]'
 # If hardware drivers rely on Raspberry Pi libraries, warn and skip
-function MaybeStartDriver($label, $path) {
+function MaybeStartDriver {
+    param($label, $path)
     $full = Join-Path $ProjectDir $path
     if (Test-Path $full) {
         # On Windows we still attempt to run Python scripts if present
         Start-ServiceProc $label 'python' $full
     } else {
-        Write-Warn "Driver $path not found; skipping."
+        Write-Warn ('Driver {0} not found; skipping.' -f $path)
     }
 }
 
@@ -107,25 +110,25 @@ MaybeStartDriver 'pir'   'hardware/drivers/PIR_sensor.py'
 if ($IsLinux -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM') {
     MaybeStartDriver 'vision' 'hardware/vision/pi_camera_logic.py'
 } else {
-    Write-Warn "Camera launch skipped on Windows. To run vision on a Pi, execute the script on the Pi and ensure YOLO model and camera drivers are installed."
+    Write-Warn 'Camera launch skipped on Windows. To run vision on a Pi, execute the script on the Pi and ensure YOLO model and camera drivers are installed.'
 }
 
-Write-Host ""
-Write-Host "[ Backend ]"
+Write-Host ''
+Write-Host '[ Backend ]'
 Start-ServiceProc 'fusion' 'python' 'backend/logic/sensor_fusion.py'
 Start-Sleep -Seconds 1
 Start-ServiceProc 'advisory' 'python' 'backend/services/LLM_advisory.py'
 Start-ServiceProc 'api' 'python' '-m uvicorn backend.services.API_server:app --host 0.0.0.0 --port 5000 --reload'
 
-Write-Host ""
-Write-Host "[ Frontend ]"
+Write-Host ''
+Write-Host '[ Frontend ]'
 if (Get-Command python3 -ErrorAction SilentlyContinue) {
     $pycmd = 'python3'
 } else { $pycmd = 'python' }
 Start-ServiceProc 'dashboard' $pycmd '-m http.server 8080 --directory frontend'
 
 Write-Host ""
-Write-Info "All services started. Logs: $LogDir"
-Write-Info "Stop all  -> .\run_all.ps1 stop"
+Write-Info ('All services started. Logs: {0}' -f $LogDir)
+Write-Info 'Stop all  -> .\run_all.ps1 stop'
 
 Pop-Location
