@@ -17,6 +17,10 @@ ACCESS_TOKEN = os.getenv('ACCESS_TOKEN')
 DO = 27
 GPIO.setmode(GPIO.BCM)
 
+# --- MQTT Setup ---
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+client.username_pw_set(ACCESS_TOKEN)
+
 def setup():
     ADC.setup(0x48)
     GPIO.setup(DO, GPIO.IN)
@@ -38,9 +42,7 @@ def print_status(x):
 def main():
     setup()
 
-    # --- MQTT Setup ---
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
-    client.username_pw_set(ACCESS_TOKEN)
+
     try:
         client.connect(THINGSBOARD_HOST, 1883, 60)
         client.loop_start()
@@ -63,7 +65,8 @@ def main():
 
             payload = {
                 "gas_value": gas_value,
-                "gas_safe": bool(tmp)
+                "gas_safe": bool(tmp),
+                "CO2_Status": True
             }
 
             print(f"Gas Value: {gas_value} | Safe: {bool(tmp)}")
@@ -75,7 +78,13 @@ def main():
         time.sleep(3)
 
 def destroy():
+    client.publish('v1/devices/me/telemetry', json.dumps({"CO2_Status": False}), 1)
+    time.sleep(0.5)  
+    client.loop_stop()
+    client.disconnect()
     GPIO.cleanup()
+    
+
 
 if __name__ == '__main__':
     try:
