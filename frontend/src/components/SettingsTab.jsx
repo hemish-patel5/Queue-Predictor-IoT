@@ -289,9 +289,9 @@ export default function SettingsTab({ apiBaseUrl }) {
         <div className="about-team">
           <h4>Development Team</h4>
           <ul>
-            <li>Member 1: Hardware & Computer Vision</li>
-            <li>Member 2: Dashboard & UI/UX</li>
-            <li>Member 3: Backend & LLM Integration</li>
+            <li>Maalav Garg: Hardware & Computer Vision</li>
+            <li>Hemish Patel: Dashboard & UI/UX</li>
+            <li>Rasika Wijewardana: Backend & LLM Integration</li>
           </ul>
         </div>
       </div>
