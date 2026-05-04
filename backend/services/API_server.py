@@ -9,20 +9,21 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import logging
 import sys
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from logic.sensor_fusion import SensorFusion
 from services.LLM_advisory import AdvisoryService
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 load_dotenv()
 
+# logging: enable debug when API_DEBUG=1 in environment
+log_level = logging.DEBUG if os.getenv('API_DEBUG', '0') == '1' else logging.INFO
+logging.basicConfig(level=log_level)
+logger = logging.getLogger(__name__)
+
+# FastAPI app
 app = FastAPI(
     title="Queue Predictor IoT API",
     description="Backend API for Queue Time & Comfort Predictor Dashboard",
@@ -40,6 +41,10 @@ app.add_middleware(
 # --- Configuration ---
 ACCESS_TOKEN = os.getenv('ACCESS_TOKEN', '')
 THINGSBOARD_HTTP_URL = os.getenv('THINGSBOARD_HTTP_URL', 'https://thingsboard.cloud')
+
+# How old a ThingsBoard timestamp can be before a sensor is considered offline.
+# Set this to ~2x your Pi's publish interval so one missed publish doesn't flip it.
+OFFLINE_GRACE_SECONDS = int(os.getenv('SENSOR_OFFLINE_GRACE_SECONDS', '90'))
 
 # --- Services ---
 sensor_fusion = SensorFusion()
@@ -97,7 +102,6 @@ async def get_jwt_token() -> str:
 
 async def fetch_telemetry(keys: list) -> dict:
     try:
-        # Use ThingsBoard JWT auth (username/password) to query device telemetry.
         token = await get_jwt_token()
         device_id = os.getenv('THINGSBOARD_DEVICE_ID')
 
@@ -105,21 +109,69 @@ async def fetch_telemetry(keys: list) -> dict:
         params = {'keys': ','.join(keys)}
         headers = {'X-Authorization': f'Bearer {token}'}
 
+        logger.info(f"Fetching telemetry for device_id={device_id} token_present={bool(token)}")
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
+            logger.info(f"ThingsBoard request: GET {url} params={params} status={response.status_code}")
+            if not data:
+                logger.warning(f"ThingsBoard returned empty timeseries for keys={params.get('keys')}. Response text: {response.text}")
             logger.info(f"Raw ThingsBoard response: {data}")
 
-            # Extract latest value and timestamp for each key
+            def parse_ts_to_ms(raw_ts):
+                if raw_ts is None:
+                    return None
+                if isinstance(raw_ts, (int, float)):
+                    ts_int = int(raw_ts)
+                else:
+                    raw_s = str(raw_ts).strip()
+                    if raw_s.isdigit():
+                        try:
+                            ts_int = int(raw_s)
+                        except Exception:
+                            return None
+                    else:
+                        try:
+                            dt = datetime.fromisoformat(raw_s)
+                            ts_int = int(dt.timestamp() * 1000)
+                        except Exception:
+                            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+                                try:
+                                    dt = datetime.strptime(raw_s, fmt)
+                                    ts_int = int(dt.timestamp() * 1000)
+                                    break
+                                except Exception:
+                                    ts_int = None
+                            if ts_int is None:
+                                return None
+                if ts_int is not None and ts_int < 1_000_000_000_000:
+                    ts_int = ts_int * 1000
+                return ts_int
+
             parsed = {}
             for key, values in data.items():
-                if values:
-                    first = values[0]
+                if not values:
+                    continue
+                latest_item = None
+                latest_ts = -1
+                for item in values:
+                    raw_ts = item.get('ts')
+                    ts_candidate = parse_ts_to_ms(raw_ts)
+                    if ts_candidate is None:
+                        ts_candidate = 0
+                    if ts_candidate > latest_ts:
+                        latest_ts = ts_candidate
+                        latest_item = item
+                if latest_item is not None:
                     parsed[key] = {
-                        'value': first.get('value'),
-                        'ts': first.get('ts')
+                        'value': latest_item.get('value'),
+                        'ts': parse_ts_to_ms(latest_item.get('ts'))
                     }
+
+            for req_key in keys:
+                if req_key not in parsed:
+                    parsed[req_key] = {'value': None, 'ts': None}
 
             logger.info(f"Parsed telemetry: {parsed}")
             return parsed
@@ -127,11 +179,10 @@ async def fetch_telemetry(keys: list) -> dict:
     except httpx.HTTPError as e:
         logger.warning(f"Failed to fetch telemetry: {e}")
         return {}
-    
+
+
 def safe_float(value, default=0.0):
-    """Safely convert a value to float."""
     try:
-        # Accept either raw value or dict with 'value'
         if isinstance(value, dict):
             v = value.get('value')
         else:
@@ -142,7 +193,6 @@ def safe_float(value, default=0.0):
 
 
 def safe_int(value, default=0):
-    """Safely convert a value to int."""
     try:
         if isinstance(value, dict):
             v = value.get('value')
@@ -154,10 +204,6 @@ def safe_int(value, default=0):
 
 
 def is_recent(entry, max_age_seconds=300):
-    """Return True if telemetry entry has a timestamp within max_age_seconds.
-    Entry may be either a dict {'value':..., 'ts':...} or a raw value.
-    Raw values are treated as recent (True) since no timestamp is available.
-    """
     if entry is None:
         return False
     if isinstance(entry, dict):
@@ -165,13 +211,17 @@ def is_recent(entry, max_age_seconds=300):
         if not ts:
             return True
         try:
-            now_ms = int(datetime.utcnow().timestamp() * 1000)
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
             age_ms = now_ms - int(ts)
             return age_ms <= (max_age_seconds * 1000)
         except Exception:
             return True
-    # raw scalar
     return True
+
+
+def format_iso_utc(ts_ms: int) -> str:
+    """Convert a millisecond UTC timestamp to an ISO-8601 string with 24hr time."""
+    return datetime.utcfromtimestamp(ts_ms / 1000).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
 
 
 # --- Routes ---
@@ -181,7 +231,7 @@ async def root():
     return {
         "status": "online",
         "service": "Queue Predictor IoT API",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": format_iso_utc(int(datetime.now(timezone.utc).timestamp() * 1000))
     }
 
 
@@ -196,13 +246,10 @@ async def health_check():
 
 @app.get("/api/v1/live-status")
 async def get_live_status():
-    """
-    Get live dashboard status with all sensor data and advisory message.
-    """
     try:
         telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
+        logger.debug(f"Telemetry received for sensor-health: {telemetry}")
 
-        # Extract values with safe defaults
         people_count    = safe_int(telemetry.get('people_in_frame', 0))
         gas_value       = safe_float(telemetry.get('gas_value', 0))
         gas_safe        = telemetry.get('gas_safe', True)
@@ -212,10 +259,8 @@ async def get_live_status():
         noise_level     = telemetry.get('noise_level', 'quiet')
         motion_detected = telemetry.get('motion_detected', False)
 
-        # Estimated wait time: 2 minutes per person
         estimated_wait_time = people_count * 2
 
-        # Comfort metrics via sensor fusion
         comfort_data = sensor_fusion.calculate_comfort_metrics(
             temperature=temperature,
             humidity=humidity,
@@ -223,7 +268,6 @@ async def get_live_status():
             noise_level=sound_value
         )
 
-        # LLM advisory
         advisory_message = advisory_service.generate_advisory(
             people_count=people_count,
             co2_level=gas_value,
@@ -233,8 +277,9 @@ async def get_live_status():
             comfort_score=comfort_data.get('comfort_score', 0)
         )
 
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_iso_utc(now_ms),
             "live_status": {
                 "people_count": people_count,
                 "estimated_wait_time": estimated_wait_time,
@@ -260,80 +305,114 @@ async def get_live_status():
 
 
 @app.get("/api/v1/sensor-health")
-async def get_sensor_health():
+async def get_sensor_health(debug: bool = False):
     """
     Get health status of all connected sensors.
-    A sensor is considered online if its key exists in the latest telemetry.
+    A sensor is online only if its most recent ThingsBoard timestamp (with a
+    non-null value) is within SENSOR_OFFLINE_GRACE_SECONDS of now (UTC).
+    Keys with null values are ignored — ThingsBoard returns fake current
+    timestamps for keys that have never had real data.
     """
     try:
         telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
         sensor_health = {}
+        sensor_debug = {}
 
-        # Freshness cutoff in seconds (user requested 10 seconds)
-        FRESHNESS_SECONDS = 10
+        FUTURE_ALLOW_MS = 30 * 1000
+        MAX_ACCEPT_FUTURE_MS = int(os.getenv('THINGSBOARD_MAX_FUTURE_SECONDS', str(12 * 3600))) * 1000
+
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
         for sensor_key, sensor_info in SENSOR_KEYS.items():
-                latest_ts = None
-                # Find the most recent timestamp among the sensor's keys (timestamps in ms)
-                for key in sensor_info['keys']:
-                    entry = telemetry.get(key)
-                    if entry is None:
-                        continue
-                    # entry should be a dict {'value': .., 'ts': ..}; ignore raw scalars
-                    if isinstance(entry, dict):
-                        ts = entry.get('ts')
-                        if not ts:
-                            continue
-                        try:
-                            ts_int = int(ts)
-                        except Exception:
-                            continue
-                        if latest_ts is None or ts_int > latest_ts:
-                            latest_ts = ts_int
+            # Find the most recent timestamp across all keys for this sensor,
+            # but ONLY consider entries that have a real (non-null) value.
+            latest_ts_ms = None
+            for key in sensor_info['keys']:
+                entry = telemetry.get(key)
+                logger.debug(f"  [{sensor_key}] key={key} entry={entry}")
 
-                # Determine online/offline based on latest valid timestamp only
-                now_ms = int(datetime.utcnow().timestamp() * 1000)
-                is_online = False
-                last_update = None
-                stale_seconds = None
+                if not isinstance(entry, dict):
+                    continue
 
-                if latest_ts is not None:
-                    # Normalize ts: ThingsBoard may return seconds or milliseconds.
-                    if latest_ts < 1_000_000_000_000:
-                        ts_ms = latest_ts * 1000
+                # Skip null-value entries — ThingsBoard generates a current
+                # timestamp for keys that have never received real data.
+                if entry.get('value') is None:
+                    logger.debug(f"    [{sensor_key}] key={key} has null value — skipping")
+                    continue
+
+                ts = entry.get('ts')
+                if ts is None:
+                    continue
+
+                try:
+                    ts_int = int(ts)
+                except Exception:
+                    continue
+
+                # Normalize seconds -> ms
+                if ts_int < 1_000_000_000_000:
+                    ts_int = ts_int * 1000
+
+                if latest_ts_ms is None or ts_int > latest_ts_ms:
+                    latest_ts_ms = ts_int
+
+            is_online = False
+            last_update = None
+            stale_seconds = None
+            ts_ms = None
+
+            if latest_ts_ms is not None:
+                ts_ms = latest_ts_ms
+
+                # Clamp modest future skew down to now
+                if ts_ms > now_ms + FUTURE_ALLOW_MS:
+                    if ts_ms <= now_ms + MAX_ACCEPT_FUTURE_MS:
+                        ts_ms = now_ms
                     else:
-                        ts_ms = latest_ts
-
-                    # Ignore timestamps that are unreasonably in the future
-                    FUTURE_ALLOW_MS = 30 * 1000  # allow up to 30s clock skew into future
-                    if ts_ms > now_ms + FUTURE_ALLOW_MS:
-                        # invalid future timestamp -> treat as missing
+                        # Implausibly far in the future — treat as missing
                         ts_ms = None
 
-                    if ts_ms is not None:
-                        age_ms = now_ms - int(ts_ms)
-                        stale_seconds = int(max(0, age_ms) / 1000)
-                        is_online = age_ms <= (FRESHNESS_SECONDS * 1000)
-                        try:
-                            last_update = datetime.utcfromtimestamp(int(ts_ms) / 1000).isoformat()
-                        except Exception:
-                            last_update = datetime.utcnow().isoformat()
-                else:
-                    # No timestamped telemetry found; do not treat raw values as authoritative
-                    is_online = False
+            if ts_ms is not None:
+                age_ms = now_ms - ts_ms
+                stale_seconds = int(max(0, age_ms) / 1000)
+                is_online = age_ms <= (OFFLINE_GRACE_SECONDS * 1000)
+                last_update = format_iso_utc(ts_ms)
+                logger.debug(
+                    f"Sensor '{sensor_key}' ts={ts_ms} now={now_ms} "
+                    f"age_s={stale_seconds} online={is_online} (grace={OFFLINE_GRACE_SECONDS}s)"
+                )
+            else:
+                is_online = False
+                logger.debug(f"Sensor '{sensor_key}' has no valid non-null timestamp — offline")
 
-                sensor_health[sensor_key] = {
-                    "name": sensor_info['name'],
-                    "status": "online" if is_online else "offline",
-                    "last_update": last_update,
-                    "stale_seconds": stale_seconds,
-                    "alert": not is_online
-                }
+            sensor_debug[sensor_key] = {
+                'latest_ts_ms': ts_ms,
+                'stale_seconds': stale_seconds,
+                'is_online': is_online,
+            }
 
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "sensors": sensor_health
+            sensor_health[sensor_key] = {
+                'name': sensor_info['name'],
+                'status': 'online' if is_online else 'offline',
+                'last_update': last_update,
+                'stale_seconds': stale_seconds,
+                'alert': not is_online
+            }
+
+        response = {
+            'timestamp': format_iso_utc(now_ms),
+            'sensors': sensor_health
         }
+
+        if debug:
+            response['debug'] = {
+                'telemetry': telemetry,
+                'sensors_debug': sensor_debug,
+                'offline_grace_seconds': OFFLINE_GRACE_SECONDS,
+                'server_now_ms': now_ms,
+            }
+
+        return response
 
     except Exception as e:
         logger.error(f"Error fetching sensor health: {e}")
@@ -342,9 +421,6 @@ async def get_sensor_health():
 
 @app.get("/api/v1/comfort-score")
 async def get_comfort_score():
-    """
-    Get current comfort score and breakdown.
-    """
     try:
         telemetry = await fetch_telemetry(['temperature', 'humidity', 'gas_value', 'sound_value'])
 
@@ -361,7 +437,7 @@ async def get_comfort_score():
         )
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_iso_utc(int(datetime.now(timezone.utc).timestamp() * 1000)),
             "comfort_data": comfort_data
         }
 
@@ -372,16 +448,12 @@ async def get_comfort_score():
 
 @app.get("/api/v1/history")
 async def get_history(hours: int = 6, limit: int = 100):
-    """
-    Placeholder for historical data endpoint.
-    ThingsBoard historical telemetry requires JWT auth — implement if needed.
-    """
     try:
-        # Query ThingsBoard for timeseries between start and end timestamps
         token = await get_jwt_token()
         device_id = os.getenv('THINGSBOARD_DEVICE_ID')
 
-        end_ts = int(datetime.utcnow().timestamp() * 1000)
+        now_utc = datetime.now(timezone.utc)
+        end_ts = int(now_utc.timestamp() * 1000)
         start_ts = end_ts - int(hours * 3600 * 1000)
 
         keys = [
@@ -407,7 +479,6 @@ async def get_history(hours: int = 6, limit: int = 100):
             response.raise_for_status()
             data = response.json()
 
-        # Normalize into arrays sorted by timestamp asc
         def normalize_hist(key):
             values = data.get(key, []) or []
             out = []
@@ -423,7 +494,7 @@ async def get_history(hours: int = 6, limit: int = 100):
             return out
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_iso_utc(end_ts),
             "hours": hours,
             "queue_history": normalize_hist('people_in_frame'),
             "queue_length_history": normalize_hist('queue_length'),
@@ -436,7 +507,7 @@ async def get_history(hours: int = 6, limit: int = 100):
     except httpx.HTTPError as e:
         logger.warning(f"Failed to fetch history: {e}")
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_iso_utc(int(datetime.now(timezone.utc).timestamp() * 1000)),
             "hours": hours,
             "message": f"Failed to fetch history: {e}",
             "queue_history": [],
