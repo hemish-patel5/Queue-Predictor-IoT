@@ -25,3 +25,50 @@ The Queue Time & Comfort Predictor is an IoT-based system that helps students an
 ├── .gitignore            # Files to exclude (e.g., .env with API keys)
 └── README.md             # Project overview and setup instructions
 ```
+
+## Running the project
+
+There are two helper scripts to start all components (drivers, backend and frontend):
+
+- `run_all.sh` — Unix / WSL / Raspberry Pi
+- `run_all.ps1` — Windows PowerShell (created to help Windows users)
+
+Basic steps (Unix / macOS / Pi):
+
+1. Create Python venv and install requirements (once):
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements-updated.txt
+```
+
+2. Create a `.env` file in the project root (copy `.env.example` if present) and set required keys (THINGSBOARD credentials, ACCESS_TOKEN, etc.).
+
+3. Start everything:
+
+```bash
+chmod +x run_all.sh
+./run_all.sh
+```
+
+On Windows (PowerShell):
+
+1. Open PowerShell in the project root and run (this will create a venv and install dependencies if needed):
+
+```powershell
+.\run_all.ps1
+```
+
+2. Stop services:
+
+```powershell
+.\run_all.ps1 stop
+```
+
+Camera / YOLO prerequisites
+
+- The vision pipeline uses `yolov8n.pt` (stored in project root) and requires OpenCV, ultralytics/YOLOv8 and a camera device (typically a USB webcam or Pi camera).
+- For Raspberry Pi: install the Raspberry Pi camera drivers and Python packages (e.g., `opencv-python`, `paho-mqtt`, `ultralytics`). The Windows runner will skip launching the camera and prints instructions instead.
+
+If you want, I can also add a dedicated setup script for Raspberry Pi to automate installing drivers and pip packages — tell me your Pi OS (Raspbian / Raspberry Pi OS) and I’ll prepare it.
