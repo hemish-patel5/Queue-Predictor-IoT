@@ -60,7 +60,7 @@ def main():
         except Exception as e:
             print(f"Error: {e}")
 
-        time.sleep(0.2)
+        time.sleep(2.0)
 
 if __name__ == '__main__':
     try:

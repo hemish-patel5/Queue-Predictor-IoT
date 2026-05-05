@@ -53,7 +53,7 @@ export default function SensorsTab({ sensorHealth, apiBaseUrl }) {
     pir: {
       name: 'Motion Sensor (PIR)',
       description: 'Detects motion and presence',
-      keys: ['motion_detected', 'motion_count'],
+      keys: ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event'],
       status: sensors.pir?.status || 'offline',
       last_update: sensors.pir?.last_update,
       stale_seconds: sensors.pir?.stale_seconds,

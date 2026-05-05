@@ -79,7 +79,7 @@ def main():
 
 def destroy():
     client.publish('v1/devices/me/telemetry', json.dumps({"CO2_Status": False}), 1)
-    time.sleep(0.5)  
+    time.sleep(2.0)  
     client.loop_stop()
     client.disconnect()
     GPIO.cleanup()
