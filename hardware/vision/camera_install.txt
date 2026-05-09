@@ -1,0 +1,20 @@
+Installation of camera:
+
+
+pip install opencv-python --break-system-packages
+ 
+sudo apt-get update
+sudo apt-get install libatlas-base-dev libgl1-mesa-glx -y
+ 
+pip install ultralytics --break-system-packages
+ 
+ 
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+ 
+Download onnx:
+sudo pip3 install onnx onnxruntime --break-system-packages
+
+Test it Works:
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=320)"
+
