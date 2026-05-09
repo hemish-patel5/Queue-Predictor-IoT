@@ -70,5 +70,3 @@ Camera / YOLO prerequisites
 
 - The vision pipeline uses `yolov8n.pt` (stored in project root) and requires OpenCV, ultralytics/YOLOv8 and a camera device (typically a USB webcam or Pi camera).
 - For Raspberry Pi: install the Raspberry Pi camera drivers and Python packages (e.g., `opencv-python`, `paho-mqtt`, `ultralytics`). The Windows runner will skip launching the camera and prints instructions instead.
-
-If you want, I can also add a dedicated setup script for Raspberry Pi to automate installing drivers and pip packages — tell me your Pi OS (Raspbian / Raspberry Pi OS) and I’ll prepare it.
