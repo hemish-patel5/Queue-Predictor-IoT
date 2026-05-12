@@ -28,10 +28,9 @@ GPIO.setup(PIR_EXIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
     client.username_pw_set(ACCESS_TOKEN)
-    client.tls_set(cert_reqs=ssl.CERT_NONE)
-    client.tls_insecure_set(True)
     try:
-        client.connect(THINGSBOARD_HOST, 8883, 60)
+        # Use plaintext MQTT (port 1883) like other drivers (camera, sound)
+        client.connect(THINGSBOARD_HOST, 1883, 60)
         client.loop_start()
         print("Connected to ThingsBoard successfully!")
     except Exception as e:

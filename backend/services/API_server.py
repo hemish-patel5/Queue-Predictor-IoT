@@ -255,18 +255,9 @@ async def get_live_status():
         telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
         logger.debug(f"Telemetry received for sensor-health: {telemetry}")
 
-        # Compute people_count preferentially from entry/exit counters if available
-        entry_ctr = safe_int(telemetry.get('entry_count', 0))
-        exit_ctr = safe_int(telemetry.get('exit_count', 0))
-        device_people = telemetry.get('people_count')
-        camera_people = safe_int(telemetry.get('people_in_frame', 0))
-
-        if entry_ctr or exit_ctr:
-            people_count = max(0, entry_ctr - exit_ctr)
-        elif device_people is not None:
-            people_count = safe_int(device_people, camera_people)
-        else:
-            people_count = camera_people
+        # Use camera people_in_frame as the authoritative people count.
+        # PIR is currently unavailable so ignore entry/exit counters.
+        people_count = safe_int(telemetry.get('people_in_frame', 0))
         gas_value       = safe_float(telemetry.get('gas_value', 0))
         gas_safe        = telemetry.get('gas_safe', True)
         temperature     = safe_float(telemetry.get('temperature', 20))
