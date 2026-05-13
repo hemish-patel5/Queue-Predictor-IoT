@@ -461,29 +461,25 @@ async def get_history(hours: int = 6, limit: int = None):
 
         now_utc = datetime.now(timezone.utc)
         end_ts = int(now_utc.timestamp() * 1000)
-        start_ts = end_ts - int(hours * 3600 * 1000)
+        params = {
+            'keys': ','.join([
+                'people_in_frame',
+                'queue_length',
+                'gas_value',
+                'sound_value',
+                'temperature',
+                'humidity'
+            ]),
+            'limit': limit or 10000
+        }
 
-        # Auto-calculate limit if not provided: assume 1 data point per minute.
-        # For 7 days: 7*24*60 = 10,080 points. Add 20% buffer for safety.
-        if limit is None:
-            limit = max(500, int(hours * 60 * 1.2))
-
-        keys = [
-            'people_in_frame',
-            'queue_length',
-            'gas_value',
-            'sound_value',
-            'temperature',
-            'humidity'
-        ]
+        if hours > 0:
+            start_ts = end_ts - int(hours * 3600 * 1000)
+            params['startTs'] = start_ts
+            params['endTs'] = end_ts
+        # If hours == 0, fetch all historical data (no startTs/endTs limits)
 
         url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
-        params = {
-            'keys': ','.join(keys),
-            'startTs': start_ts,
-            'endTs': end_ts,
-            'limit': limit
-        }
         headers = {'X-Authorization': f'Bearer {token}'}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
