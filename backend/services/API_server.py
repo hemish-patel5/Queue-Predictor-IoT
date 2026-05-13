@@ -463,6 +463,29 @@ async def get_history(hours: int = 6, limit: int = None):
         end_ts = int(now_utc.timestamp() * 1000)
         start_ts = end_ts - int(hours * 3600 * 1000)
 
+        # Choose aggregation based on time window
+        if hours <= 1:
+            agg = "NONE"
+            interval_ms = None
+            fetch_limit = 500
+        elif hours <= 6:
+            agg = "AVG"
+            interval_ms = 1 * 60 * 1000        # 1-min buckets → ~360 points
+        elif hours <= 24:
+            agg = "AVG"
+            interval_ms = 5 * 60 * 1000        # 5-min buckets → ~288 points
+        elif hours <= 72:
+            agg = "AVG"
+            interval_ms = 15 * 60 * 1000       # 15-min buckets → ~288 points
+        else:
+            agg = "AVG"
+            interval_ms = 30 * 60 * 1000       # 30-min buckets → ~336 points
+
+        if agg == "NONE":
+            fetch_limit = 500
+        else:
+            fetch_limit = int((hours * 3600 * 1000) / interval_ms) + 10
+
         keys = [
             'people_in_frame',
             'queue_length',
@@ -479,10 +502,18 @@ async def get_history(hours: int = 6, limit: int = None):
                     'keys': key,
                     'startTs': start_ts,
                     'endTs': end_ts,
-                    'limit': 10000
+                    'limit': fetch_limit,
+                    'agg': agg,
                 }
+                if interval_ms:
+                    params['interval'] = interval_ms
+
                 headers = {'X-Authorization': f'Bearer {token}'}
-                response = await client.get(f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries", params=params, headers=headers)
+                response = await client.get(
+                    f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries",
+                    params=params,
+                    headers=headers
+                )
                 response.raise_for_status()
                 key_data = response.json()
                 data[key] = key_data.get(key, [])
@@ -528,7 +559,6 @@ async def get_history(hours: int = 6, limit: int = None):
     except Exception as e:
         logger.error(f"Error in history endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
