@@ -186,7 +186,7 @@ export default function HistoryTab({ apiBaseUrl }) {
       <div className="history-controls">
         <label htmlFor="hours-select">Show data for last:</label>
         <select
-          id="hours-select"
+          id="hours-label"
           value={hours}
           onChange={(e) => setHours(parseInt(e.target.value))}
           style={{ color: "black" }}

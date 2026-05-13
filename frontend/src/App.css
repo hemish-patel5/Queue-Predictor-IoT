@@ -784,23 +784,15 @@ select {
 }
 
 .history-controls label {
-  color: #000000;
+  color: #ffffff;
   font-size: var(--font-size-sm);
-  background-color: transparent;
-  padding: 0;
+  background-color: var(--secondary-dark);
+  padding: 0 0.25rem;
 }
 
-.history-controls select {
-  background-color: #ffffff;
-  color: #000000;
-  border: 1px solid var(--border-dark);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-}
 
 .history-controls select:focus {
   border-color: var(--accent-blue);
-  background-color: rgba(59, 130, 246, 0.12);
 }
 
 
