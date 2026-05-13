@@ -89,7 +89,14 @@ export default function HistoryTab({ apiBaseUrl }) {
                 max: nowMs,
                 title: { display: true, text: "Time" },
               },
-              y: { beginAtZero: true, title: { display: true, text: "Count" } },
+              y: { 
+                beginAtZero: true, 
+                  ticks: {
+                  precision: 0,        
+                  stepSize: 1, 
+                  },        
+                title: { display: true, text: "Count" } 
+              },
             },
           },
         });
