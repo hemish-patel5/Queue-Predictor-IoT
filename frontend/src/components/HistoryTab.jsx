@@ -53,7 +53,10 @@ export default function HistoryTab({ apiBaseUrl }) {
                 : Number(p.value),
         }));
 
-      const queueData = mapPoints(data.queue_history);
+      const queueData = mapPoints(data.queue_history).map((p) => ({
+        ...p,
+        y: p.y === null ? null : Math.round(p.y),
+      }));
       const tempData = mapPoints(data.temperature_history);
       const gasData = mapPoints(data.gas_history);
       const soundData = mapPoints(data.sound_history);
@@ -81,6 +84,15 @@ export default function HistoryTab({ apiBaseUrl }) {
           },
           options: {
             animation: false,
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return 'People in Frame: ' + Math.round(context.parsed.y);
+                  }
+                }
+              }
+            },
             scales: {
               x: {
                 type: "time",
