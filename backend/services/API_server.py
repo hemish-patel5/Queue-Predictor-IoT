@@ -32,7 +32,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://queue-predictor-iot.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,8 +61,13 @@ ALL_SENSOR_KEYS = [
     'sound_value',
     'noise_level',
     'trigger_count',
+    # PIR: motion and directional counts
     'motion_detected',
     'motion_count',
+    'entry_count',
+    'exit_count',
+    'people_count',
+    'last_event',
 ]
 
 SENSOR_KEYS = {
@@ -84,7 +89,7 @@ SENSOR_KEYS = {
     },
     'pir': {
         'name': 'Motion Sensor (PIR)',
-        'keys': ['motion_detected', 'motion_count']
+        'keys': ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event']
     }
 }
 
@@ -250,7 +255,9 @@ async def get_live_status():
         telemetry = await fetch_telemetry(ALL_SENSOR_KEYS)
         logger.debug(f"Telemetry received for sensor-health: {telemetry}")
 
-        people_count    = safe_int(telemetry.get('people_in_frame', 0))
+        # Use camera people_in_frame as the authoritative people count.
+        # PIR is currently unavailable so ignore entry/exit counters.
+        people_count = safe_int(telemetry.get('people_in_frame', 0))
         gas_value       = safe_float(telemetry.get('gas_value', 0))
         gas_safe        = telemetry.get('gas_safe', True)
         temperature     = safe_float(telemetry.get('temperature', 20))
@@ -447,7 +454,7 @@ async def get_comfort_score():
 
 
 @app.get("/api/v1/history")
-async def get_history(hours: int = 6, limit: int = 100):
+async def get_history(hours: int = 6, limit: int = None):
     try:
         token = await get_jwt_token()
         device_id = os.getenv('THINGSBOARD_DEVICE_ID')
@@ -455,6 +462,29 @@ async def get_history(hours: int = 6, limit: int = 100):
         now_utc = datetime.now(timezone.utc)
         end_ts = int(now_utc.timestamp() * 1000)
         start_ts = end_ts - int(hours * 3600 * 1000)
+
+        # Choose aggregation based on time window
+        if hours <= 1:
+            agg = "NONE"
+            interval_ms = None
+            fetch_limit = 500
+        elif hours <= 6:
+            agg = "AVG"
+            interval_ms = 1 * 60 * 1000        
+        elif hours <= 24:
+            agg = "AVG"
+            interval_ms = 5 * 60 * 1000        
+        elif hours <= 72:
+            agg = "AVG"
+            interval_ms = 15 * 60 * 1000       
+        else:
+            agg = "AVG"
+            interval_ms = 30 * 60 * 1000       
+
+        if agg == "NONE":
+            fetch_limit = 500
+        else:
+            fetch_limit = int((hours * 3600 * 1000) / interval_ms) + 10
 
         keys = [
             'people_in_frame',
@@ -465,19 +495,28 @@ async def get_history(hours: int = 6, limit: int = 100):
             'humidity'
         ]
 
-        url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
-        params = {
-            'keys': ','.join(keys),
-            'startTs': start_ts,
-            'endTs': end_ts,
-            'limit': limit
-        }
-        headers = {'X-Authorization': f'Bearer {token}'}
-
+        data = {}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+            for key in keys:
+                params = {
+                    'keys': key,
+                    'startTs': start_ts,
+                    'endTs': end_ts,
+                    'limit': fetch_limit,
+                    'agg': agg,
+                }
+                if interval_ms:
+                    params['interval'] = interval_ms
+
+                headers = {'X-Authorization': f'Bearer {token}'}
+                response = await client.get(
+                    f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries",
+                    params=params,
+                    headers=headers
+                )
+                response.raise_for_status()
+                key_data = response.json()
+                data[key] = key_data.get(key, [])
 
         def normalize_hist(key):
             values = data.get(key, []) or []
@@ -520,7 +559,6 @@ async def get_history(hours: int = 6, limit: int = 100):
     except Exception as e:
         logger.error(f"Error in history endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn

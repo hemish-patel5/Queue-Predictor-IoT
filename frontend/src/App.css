@@ -713,6 +713,19 @@ textarea {
   transition: all var(--transition-normal);
 }
 
+.history-controls select {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: var(--border-dark);
+}
+
+.history-controls select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
 input[type='text']:focus,
 input[type='number']:focus,
 input[type='url']:focus,
@@ -768,13 +781,18 @@ select {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-  
 }
 
 .history-controls label {
-  color: var(--text-secondary);
+  color: #ffffff;
   font-size: var(--font-size-sm);
-  
+  background-color: var(--primary-dark);
+  padding: 0 0.25rem;
+}
+
+
+.history-controls select:focus {
+  border-color: var(--accent-blue);
 }
 
 
