@@ -37,9 +37,7 @@ export default function HistoryTab({ apiBaseUrl }) {
   const fetchAndRender = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `${apiBaseUrl}/api/v1/history?hours=${hours}&limit=10000`,
-      );
+      const res = await fetch(`${apiBaseUrl}/api/v1/history?hours=${hours}`);
       if (!res.ok) throw new Error("Failed to fetch history");
       const data = await res.json();
 
@@ -62,20 +60,7 @@ export default function HistoryTab({ apiBaseUrl }) {
 
       // compute x-axis window based on selected hours
       const nowMs = Date.now();
-      let startMs = nowMs - hours * 60 * 60 * 1000;
-      if (hours === 0) {
-        // For "All time", find the earliest timestamp across all datasets
-        const allTimestamps = [
-          ...queueData.map((p) => p.x),
-          ...tempData.map((p) => p.x),
-          ...gasData.map((p) => p.x),
-          ...soundData.map((p) => p.x),
-        ].filter((ts) => ts != null);
-        startMs =
-          allTimestamps.length > 0
-            ? Math.min(...allTimestamps)
-            : nowMs - 7 * 24 * 60 * 60 * 1000; // fallback to 7 days ago
-      }
+      const startMs = nowMs - hours * 60 * 60 * 1000;
       const timeUnit = hours <= 1 ? "minute" : hours <= 24 ? "hour" : "day";
 
       // Initialize or update queue chart
@@ -206,7 +191,6 @@ export default function HistoryTab({ apiBaseUrl }) {
           onChange={(e) => setHours(parseInt(e.target.value))}
           style={{ color: "black" }}
         >
-          <option value={0}>All time</option>
           <option value={1}>1 hour</option>
           <option value={3}>3 hours</option>
           <option value={6}>6 hours</option>

@@ -461,31 +461,31 @@ async def get_history(hours: int = 6, limit: int = None):
 
         now_utc = datetime.now(timezone.utc)
         end_ts = int(now_utc.timestamp() * 1000)
-        params = {
-            'keys': ','.join([
-                'people_in_frame',
-                'queue_length',
-                'gas_value',
-                'sound_value',
-                'temperature',
-                'humidity'
-            ]),
-            'limit': limit or 10000
-        }
+        start_ts = end_ts - int(hours * 3600 * 1000)
 
-        if hours > 0:
-            start_ts = end_ts - int(hours * 3600 * 1000)
-            params['startTs'] = start_ts
-            params['endTs'] = end_ts
-        # If hours == 0, fetch all historical data (no startTs/endTs limits)
+        keys = [
+            'people_in_frame',
+            'queue_length',
+            'gas_value',
+            'sound_value',
+            'temperature',
+            'humidity'
+        ]
 
-        url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
-        headers = {'X-Authorization': f'Bearer {token}'}
-
+        data = {}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+            for key in keys:
+                params = {
+                    'keys': key,
+                    'startTs': start_ts,
+                    'endTs': end_ts,
+                    'limit': 10000
+                }
+                headers = {'X-Authorization': f'Bearer {token}'}
+                response = await client.get(f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries", params=params, headers=headers)
+                response.raise_for_status()
+                key_data = response.json()
+                data[key] = key_data.get(key, [])
 
         def normalize_hist(key):
             values = data.get(key, []) or []
