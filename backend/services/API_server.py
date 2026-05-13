@@ -470,16 +470,16 @@ async def get_history(hours: int = 6, limit: int = None):
             fetch_limit = 500
         elif hours <= 6:
             agg = "AVG"
-            interval_ms = 1 * 60 * 1000        # 1-min buckets → ~360 points
+            interval_ms = 1 * 60 * 1000        
         elif hours <= 24:
             agg = "AVG"
-            interval_ms = 5 * 60 * 1000        # 5-min buckets → ~288 points
+            interval_ms = 5 * 60 * 1000        
         elif hours <= 72:
             agg = "AVG"
-            interval_ms = 15 * 60 * 1000       # 15-min buckets → ~288 points
+            interval_ms = 15 * 60 * 1000       
         else:
             agg = "AVG"
-            interval_ms = 30 * 60 * 1000       # 30-min buckets → ~336 points
+            interval_ms = 30 * 60 * 1000       
 
         if agg == "NONE":
             fetch_limit = 500
