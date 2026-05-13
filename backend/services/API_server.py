@@ -454,7 +454,7 @@ async def get_comfort_score():
 
 
 @app.get("/api/v1/history")
-async def get_history(hours: int = 6, limit: int = 100):
+async def get_history(hours: int = 6, limit: int = None):
     try:
         token = await get_jwt_token()
         device_id = os.getenv('THINGSBOARD_DEVICE_ID')
@@ -462,6 +462,11 @@ async def get_history(hours: int = 6, limit: int = 100):
         now_utc = datetime.now(timezone.utc)
         end_ts = int(now_utc.timestamp() * 1000)
         start_ts = end_ts - int(hours * 3600 * 1000)
+
+        # Auto-calculate limit if not provided: assume 1 data point per minute.
+        # For 7 days: 7*24*60 = 10,080 points. Add 20% buffer for safety.
+        if limit is None:
+            limit = max(500, int(hours * 60 * 1.2))
 
         keys = [
             'people_in_frame',
