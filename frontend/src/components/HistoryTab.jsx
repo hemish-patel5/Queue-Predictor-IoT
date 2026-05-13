@@ -87,11 +87,11 @@ export default function HistoryTab({ apiBaseUrl }) {
             plugins: {
               tooltip: {
                 callbacks: {
-                  label: function(context) {
-                    return 'People in Frame: ' + Math.round(context.parsed.y);
-                  }
-                }
-              }
+                  label: function (context) {
+                    return "People in Frame: " + Math.round(context.parsed.y);
+                  },
+                },
+              },
             },
             scales: {
               x: {
