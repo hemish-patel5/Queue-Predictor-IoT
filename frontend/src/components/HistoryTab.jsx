@@ -94,6 +94,9 @@ export default function HistoryTab({ apiBaseUrl }) {
                 ticks: {
                   precision: 0,
                   stepSize: 1,
+                  callback: function (value) {
+                    return Math.round(value);
+                  },
                 },
                 title: { display: true, text: "Count" },
               },
