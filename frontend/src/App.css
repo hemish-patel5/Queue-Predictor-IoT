@@ -781,9 +781,6 @@ select {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-  background-color: #ffffff;
-  padding: calc(var(--spacing-md) / 1.5);
-  border-radius: var(--radius-md);
 }
 
 .history-controls label {
@@ -796,12 +793,6 @@ select {
 .history-controls select {
   background-color: #ffffff;
   color: #000000;
-  border-color: var(--border-dark);
-}
-
-.history-controls select {
-  background-color: var(--surface);
-  color: var(--text-primary);
   border: 1px solid var(--border-dark);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
