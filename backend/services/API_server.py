@@ -66,6 +66,8 @@ ALL_SENSOR_KEYS = [
     'motion_count',
     'entry_count',
     'exit_count',
+    # per-event key published by PIR driver
+    'event_type',
     'people_count',
     'last_event',
 ]
@@ -89,7 +91,9 @@ SENSOR_KEYS = {
     },
     'pir': {
         'name': 'Motion Sensor (PIR)',
-        'keys': ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event']
+        # include the per-event "event_type" key so sensor-health can use
+        # the event timestamps when deciding if PIR is online
+        'keys': ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event', 'event_type', 'event', 'occupancy']
     }
 }
 
