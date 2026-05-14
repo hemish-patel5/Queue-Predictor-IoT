@@ -66,18 +66,21 @@ def main():
         motion_count += 1
         if res == 'entry':
             entry_count += 1
+            people_count += 1
             last_event = 'entry'
             print(f"[PIR] Entry detected. entry_count={entry_count}")
         elif res == 'exit':
             exit_count += 1
+            people_count = max(0, people_count - 1)
             last_event = 'exit'
             print(f"[PIR] Exit detected. exit_count={exit_count}")
         else:
             last_event = 'motion'
 
-        # Publish per-event telemetry (no device-side people_count)
+        # Publish per-event telemetry using the 'event' key so backend
+        # can use the event timestamp for sensor health.
         event_payload = {
-            'event_type': res,
+            'event': res,
             'ts': int(ts * 1000),
         }
         try:
@@ -85,17 +88,17 @@ def main():
         except Exception as e:
             print(f"MQTT publish error (event): {e}")
 
-        # Publish cumulative counters so backend can compute authoritative people_count
-        agg = {
-            'motion_count': motion_count,
-            'entry_count': entry_count,
-            'exit_count': exit_count,
-            'last_event': last_event,
+        # Publish occupancy (current inferred people count). Backend uses
+        # occupancy for people_count if needed and event timestamps determine
+        # PIR online/offline.
+        occupancy_payload = {
+            'occupancy': people_count,
+            'ts': int(ts * 1000),
         }
         try:
-            client.publish('v1/devices/me/telemetry', json.dumps(agg), 1)
+            client.publish('v1/devices/me/telemetry', json.dumps(occupancy_payload), 1)
         except Exception as e:
-            print(f"MQTT publish error (agg): {e}")
+            print(f"MQTT publish error (occupancy): {e}")
 
     # Setup GPIO callbacks
     DEBOUNCE_MS = int(max(50, float(os.getenv('PIR_GPIO_BOUNCE_MS', '200'))))

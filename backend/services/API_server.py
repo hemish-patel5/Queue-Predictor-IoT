@@ -62,14 +62,9 @@ ALL_SENSOR_KEYS = [
     'noise_level',
     'trigger_count',
     # PIR: motion and directional counts
-    'motion_detected',
-    'motion_count',
-    'entry_count',
-    'exit_count',
-    # per-event key published by PIR driver
-    'event_type',
-    'people_count',
-    'last_event',
+    # PIR now publishes only these two keys
+    'event',
+    'occupancy',
 ]
 
 SENSOR_KEYS = {
@@ -91,8 +86,7 @@ SENSOR_KEYS = {
     },
     'pir': {
         'name': 'Motion Sensor (PIR)',
-        # include the per-event "event_type" key so sensor-health can use
-        # the event timestamps when deciding if PIR is online
+        # PIR publishes only 'event' (per-event string) and 'occupancy' (current count)
         'keys': ['event', 'occupancy']
     }
 }
@@ -338,6 +332,7 @@ async def get_sensor_health(debug: bool = False):
             # Find the most recent timestamp across all keys for this sensor,
             # but ONLY consider entries that have a real (non-null) value.
             latest_ts_ms = None
+            latest_key = None
             for key in sensor_info['keys']:
                 entry = telemetry.get(key)
                 logger.debug(f"  [{sensor_key}] key={key} entry={entry}")
@@ -366,6 +361,7 @@ async def get_sensor_health(debug: bool = False):
 
                 if latest_ts_ms is None or ts_int > latest_ts_ms:
                     latest_ts_ms = ts_int
+                    latest_key = key
 
             is_online = False
             last_update = None
@@ -398,6 +394,7 @@ async def get_sensor_health(debug: bool = False):
 
             sensor_debug[sensor_key] = {
                 'latest_ts_ms': ts_ms,
+                'latest_key': latest_key,
                 'stale_seconds': stale_seconds,
                 'is_online': is_online,
             }
