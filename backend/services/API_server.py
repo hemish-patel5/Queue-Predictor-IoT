@@ -50,15 +50,6 @@ OFFLINE_GRACE_SECONDS = int(os.getenv('SENSOR_OFFLINE_GRACE_SECONDS', '90'))
 sensor_fusion = SensorFusion()
 advisory_service = AdvisoryService()
 
-# In-memory PIR live counters (ephemeral, reset on server restart)
-PIR_LIVE = {
-    'last_event_ts': 0,        # ms timestamp of last processed event
-    'entry_count': 0,          # recent entry events (since last activity or reset)
-    'exit_count': 0,           # recent exit events
-    'current_occupancy': None, # inferred occupancy tracked by PIR events
-    'last_activity_ms': 0,
-}
-
 # --- Sensor keys published by the Pi ---
 ALL_SENSOR_KEYS = [
     'people_in_frame',
@@ -292,19 +283,21 @@ async def get_live_status():
         )
 
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        # Only fetch and process new events since last processed event TS.
+        # Count recent entry/exit events from ThingsBoard timeseries for the 'event' key
         entry_count_recent = 0
         exit_count_recent = 0
         try:
             token = await get_jwt_token()
             device_id = os.getenv('THINGSBOARD_DEVICE_ID')
+            # look back window (ms) - count events in last 6 hours by default
+            lookback_ms = int(os.getenv('EVENT_LOOKBACK_MS', str(6 * 3600 * 1000)))
+            start_ts = now_ms - lookback_ms
             url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
-            # Request event timeseries newer than the last processed ts
             params = {
                 'keys': 'event',
-                'startTs': PIR_LIVE['last_event_ts'] + 1,
+                'startTs': start_ts,
                 'endTs': now_ms,
-                'limit': 100
+                'limit': 1000
             }
             headers = {'X-Authorization': f'Bearer {token}'}
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -312,59 +305,23 @@ async def get_live_status():
                 resp.raise_for_status()
                 event_data = resp.json()
                 events = event_data.get('event', []) or []
-                # Process events in chronological order
-                events.sort(key=lambda i: int(i.get('ts') or 0))
                 for item in events:
-                    ts = item.get('ts')
-                    if ts is None:
-                        continue
-                    try:
-                        ts_int = int(ts)
-                    except Exception:
-                        continue
-                    # normalize seconds->ms
-                    if ts_int < 1_000_000_000_000:
-                        ts_int = ts_int * 1000
-                    if ts_int <= PIR_LIVE['last_event_ts']:
-                        continue
                     v = item.get('value')
-                    if not isinstance(v, str):
-                        continue
-                    vv = v.lower()
-                    # Update live counters
-                    if vv == 'entry':
-                        PIR_LIVE['entry_count'] += 1
-                        PIR_LIVE['current_occupancy'] = (PIR_LIVE['current_occupancy'] or 0) + 1
-                        entry_count_recent += 1
-                    elif vv == 'exit':
-                        PIR_LIVE['exit_count'] += 1
-                        PIR_LIVE['current_occupancy'] = max(0, (PIR_LIVE['current_occupancy'] or 0) - 1)
-                        exit_count_recent += 1
-                    PIR_LIVE['last_event_ts'] = ts_int
-                    PIR_LIVE['last_activity_ms'] = now_ms
+                    if isinstance(v, str):
+                        vv = v.lower()
+                        if vv == 'entry':
+                            entry_count_recent += 1
+                        elif vv == 'exit':
+                            exit_count_recent += 1
         except Exception:
-            logger.debug('Failed to fetch new event timeseries for counts', exc_info=True)
-
-        # Reset live counters after inactivity
-        try:
-            PIR_RESET_MS = int(os.getenv('PIR_RESET_MS', str(5 * 60 * 1000)))
-            if PIR_LIVE['last_activity_ms'] and (now_ms - PIR_LIVE['last_activity_ms'] > PIR_RESET_MS):
-                PIR_LIVE['entry_count'] = 0
-                PIR_LIVE['exit_count'] = 0
-                PIR_LIVE['current_occupancy'] = None
-                PIR_LIVE['last_event_ts'] = 0
-                PIR_LIVE['last_activity_ms'] = 0
-        except Exception:
-            pass
+            # don't fail live-status if event counting fails
+            logger.debug('Failed to fetch recent event timeseries for counts', exc_info=True)
         return {
             "timestamp": format_iso_utc(now_ms),
             "live_status": {
-                    "people_count": people_count,
-                # Expose live-entry/exit counts accumulated since server start
-                # and reset behavior is handled below based on inactivity.
-                "entry_count": PIR_LIVE['entry_count'],
-                "exit_count": PIR_LIVE['exit_count'],
-                    "pir_occupancy": PIR_LIVE['current_occupancy'],
+                "people_count": people_count,
+                "entry_count": entry_count_recent,
+                "exit_count": exit_count_recent,
                 "estimated_wait_time": estimated_wait_time,
                 "advisory_message": advisory_message,
                 "motion_detected": motion_detected
