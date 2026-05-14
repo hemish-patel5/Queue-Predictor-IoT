@@ -292,6 +292,7 @@ async def get_live_status():
         )
 
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+<<<<<<< HEAD
         # Only fetch and process new events since last processed event TS.
         entry_count_recent = 0
         exit_count_recent = 0
@@ -365,6 +366,12 @@ async def get_live_status():
                 "entry_count": PIR_LIVE['entry_count'],
                 "exit_count": PIR_LIVE['exit_count'],
                     "pir_occupancy": PIR_LIVE['current_occupancy'],
+=======
+        return {
+            "timestamp": format_iso_utc(now_ms),
+            "live_status": {
+                "people_count": people_count,
+>>>>>>> parent of 8c6d5c1 (Added pir entry and exit)
                 "estimated_wait_time": estimated_wait_time,
                 "advisory_message": advisory_message,
                 "motion_detected": motion_detected
