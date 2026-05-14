@@ -32,8 +32,8 @@ export default function LiveStatusSection({ data }) {
 
       {/* Key Metrics Grid */}
       <div className="metrics-grid">
-        {/* People Count */}
-        <div className="metric-card metric-large">
+        {/* People Count - half width */}
+        <div className="metric-card metric-half">
           <div className="metric-header">
             <h4>People in Queue</h4>
             <span className="metric-icon">👥</span>
@@ -50,10 +50,14 @@ export default function LiveStatusSection({ data }) {
               }}
             ></div>
           </div>
+          <div className="entry-exit">
+            <small>Entries: {data.live_status.entry_count ?? 0}</small>
+            <small style={{ marginLeft: '1rem' }}>Exits: {data.live_status.exit_count ?? 0}</small>
+          </div>
         </div>
 
         {/* Estimated Wait Time */}
-        <div className="metric-card metric-large">
+        <div className="metric-card metric-half">
           <div className="metric-header">
             <h4>Est. Wait Time</h4>
             <span className="metric-icon">⏱️</span>

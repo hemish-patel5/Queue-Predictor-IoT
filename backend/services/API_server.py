@@ -283,10 +283,45 @@ async def get_live_status():
         )
 
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        # Count recent entry/exit events from ThingsBoard timeseries for the 'event' key
+        entry_count_recent = 0
+        exit_count_recent = 0
+        try:
+            token = await get_jwt_token()
+            device_id = os.getenv('THINGSBOARD_DEVICE_ID')
+            # look back window (ms) - count events in last 6 hours by default
+            lookback_ms = int(os.getenv('EVENT_LOOKBACK_MS', str(6 * 3600 * 1000)))
+            start_ts = now_ms - lookback_ms
+            url = f"{THINGSBOARD_HTTP_URL}/api/plugins/telemetry/DEVICE/{device_id}/values/timeseries"
+            params = {
+                'keys': 'event',
+                'startTs': start_ts,
+                'endTs': now_ms,
+                'limit': 1000
+            }
+            headers = {'X-Authorization': f'Bearer {token}'}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                resp.raise_for_status()
+                event_data = resp.json()
+                events = event_data.get('event', []) or []
+                for item in events:
+                    v = item.get('value')
+                    if isinstance(v, str):
+                        vv = v.lower()
+                        if vv == 'entry':
+                            entry_count_recent += 1
+                        elif vv == 'exit':
+                            exit_count_recent += 1
+        except Exception:
+            # don't fail live-status if event counting fails
+            logger.debug('Failed to fetch recent event timeseries for counts', exc_info=True)
         return {
             "timestamp": format_iso_utc(now_ms),
             "live_status": {
                 "people_count": people_count,
+                "entry_count": entry_count_recent,
+                "exit_count": exit_count_recent,
                 "estimated_wait_time": estimated_wait_time,
                 "advisory_message": advisory_message,
                 "motion_detected": motion_detected
