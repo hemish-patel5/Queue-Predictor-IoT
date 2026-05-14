@@ -407,7 +407,9 @@ async def get_sensor_health(debug: bool = False):
                 'status': 'online' if is_online else 'offline',
                 'last_update': last_update,
                 'stale_seconds': stale_seconds,
-                'alert': not is_online
+                'alert': not is_online,
+                # expose the configured telemetry keys for the frontend
+                'data_keys': sensor_info.get('keys', [])
             }
 
         response = {

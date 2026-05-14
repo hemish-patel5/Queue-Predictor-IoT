@@ -53,13 +53,22 @@ export default function SensorsTab({ sensorHealth, apiBaseUrl }) {
     pir: {
       name: 'Motion Sensor (PIR)',
       description: 'Detects motion and presence',
-      keys: ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event'],
+      // fallback keys (backend may provide `data_keys` in sensor-health)
+      keys: ['event', 'occupancy'],
       status: sensors.pir?.status || 'offline',
       last_update: sensors.pir?.last_update,
       stale_seconds: sensors.pir?.stale_seconds,
       isDraft: false,
     },
   };
+
+  // If backend returned data_keys for sensors, prefer those (keeps frontend in sync)
+  Object.keys(sensorConfigs).forEach((sk) => {
+    const backendKeys = sensors[sk]?.data_keys;
+    if (Array.isArray(backendKeys) && backendKeys.length > 0) {
+      sensorConfigs[sk].keys = backendKeys;
+    }
+  });
 
   return (
     <div className="sensors-tab">
