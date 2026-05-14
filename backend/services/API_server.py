@@ -93,7 +93,7 @@ SENSOR_KEYS = {
         'name': 'Motion Sensor (PIR)',
         # include the per-event "event_type" key so sensor-health can use
         # the event timestamps when deciding if PIR is online
-        'keys': ['motion_detected', 'motion_count', 'entry_count', 'exit_count', 'people_count', 'last_event', 'event_type', 'event', 'occupancy']
+        'keys': ['event', 'occupancy']
     }
 }
 
